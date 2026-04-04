@@ -1,0 +1,22 @@
+# Knowledge Base: [TOPIC_NAME]
+
+> Base protocol: /opt/kamosu/claude-base.md を必ず先に読み、従うこと。
+> 以下はこの知識ベース固有の指示。
+
+## Domain Context
+[この KB が扱う研究領域の説明を記述してください]
+[主要な研究テーマのリストを記述してください]
+
+## Category Structure
+[このKBのカテゴリ定義。compile 時に LLM が記事を分類する基準となる]
+- [CATEGORY_SLUG_1]: [カテゴリの説明]
+- [CATEGORY_SLUG_2]: [カテゴリの説明]
+- [CATEGORY_SLUG_3]: [カテゴリの説明]
+
+## Terminology
+[ドメイン固有の用語定義。LLM が記事生成時に正確な用語を使うための辞書]
+- [TERM1]: [定義]
+- [TERM2]: [定義]
+
+## Special Instructions
+[その他 KB 固有の指示。例: 特定のフォーマット要件、重視する観点等]

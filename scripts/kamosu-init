@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_NAME="kamosu-init"
+readonly TEMPLATES_DIR="/opt/kamosu/templates"
+readonly OUTPUT_BASE="/output"
+readonly VERSION_FILE="/opt/kamosu/VERSION"
+
+usage() {
+    cat <<EOF
+Usage: ${SCRIPT_NAME} <kb-name>
+
+Initialize a new kamosu knowledge base data repository.
+
+Arguments:
+  kb-name    Name of the knowledge base (required, alphanumeric and hyphens only)
+
+Output:
+  Creates ${OUTPUT_BASE}/kb-<kb-name>/ with the full directory structure.
+
+Example:
+  docker run --rm -v \$(pwd):/output ghcr.io/goda-lab/kamosu:latest ${SCRIPT_NAME} my-topic
+
+Options:
+  -h, --help    Show this help message
+EOF
+}
+
+error() {
+    echo "ERROR: $1" >&2
+    echo "Run '${SCRIPT_NAME} --help' for usage information." >&2
+    exit 1
+}
+
+info() {
+    echo "[${SCRIPT_NAME}] $1"
+}
+
+validate_name() {
+    local name="$1"
+    if [[ ! "${name}" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]*$ ]]; then
+        error "Invalid KB name '${name}'. Use alphanumeric characters and hyphens only (must start with alphanumeric)."
+    fi
+}
+
+main() {
+    if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+
+    local kb_name="$1"
+    validate_name "${kb_name}"
+
+    local kb_dir="${OUTPUT_BASE}/kb-${kb_name}"
+
+    if [[ -d "${kb_dir}" ]]; then
+        error "Directory '${kb_dir}' already exists. Remove it first or choose a different name."
+    fi
+
+    # Read toolkit version
+    local version="latest"
+    if [[ -f "${VERSION_FILE}" ]]; then
+        version=$(cat "${VERSION_FILE}" | tr -d '[:space:]')
+    fi
+
+    info "Creating knowledge base 'kb-${kb_name}'..."
+
+    # 1. Create directory structure
+    info "Creating directory structure..."
+    mkdir -p "${kb_dir}/raw/papers"
+    mkdir -p "${kb_dir}/raw/web-clips"
+    mkdir -p "${kb_dir}/raw/repos"
+    mkdir -p "${kb_dir}/wiki/_category"
+    mkdir -p "${kb_dir}/wiki/concepts"
+    mkdir -p "${kb_dir}/outputs"
+
+    # 2. Generate files from templates
+    info "Generating files from templates..."
+
+    # CLAUDE.md — replace TOPIC_NAME placeholder
+    sed "s/\[TOPIC_NAME\]/${kb_name}/g" "${TEMPLATES_DIR}/CLAUDE.md.template" > "${kb_dir}/CLAUDE.md"
+
+    # docker-compose.yml
+    cp "${TEMPLATES_DIR}/docker-compose.yml.tmpl" "${kb_dir}/docker-compose.yml"
+
+    # .gitignore
+    cp "${TEMPLATES_DIR}/.gitignore.tmpl" "${kb_dir}/.gitignore"
+
+    # .env.example
+    cp "${TEMPLATES_DIR}/.env.example" "${kb_dir}/.env.example"
+
+    # 3. Wiki initial files
+    info "Setting up wiki initial files..."
+
+    # _master_index.md — replace date placeholder
+    local today
+    today=$(date +%Y-%m-%d)
+    sed "s/{{DATE}}/${today}/g" "${TEMPLATES_DIR}/_master_index.md" > "${kb_dir}/wiki/_master_index.md"
+
+    # _cross_references.md — empty initial state
+    cat > "${kb_dir}/wiki/_cross_references.md" <<EOF
+# Cross References
+
+<!-- カテゴリ横断の関連性がコンパイル時に追加されます -->
+EOF
+
+    # 4. Record toolkit version
+    echo "${version}" > "${kb_dir}/.kb-toolkit-version"
+
+    info "Done! Knowledge base created at: ${kb_dir}"
+    info ""
+    info "Next steps:"
+    info "  1. cd kb-${kb_name}"
+    info "  2. Edit CLAUDE.md to configure your research domain"
+    info "  3. git init && git remote add origin <your-remote-url>"
+    info "  4. cp .env.example .env && edit .env with your AWS credentials"
+    info "  5. Add raw data to raw/ and run kamosu-compile"
+}
+
+main "$@"
