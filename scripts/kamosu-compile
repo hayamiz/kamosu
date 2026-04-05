@@ -2,7 +2,6 @@
 set -euo pipefail
 
 readonly SCRIPT_NAME="kamosu-compile"
-readonly CLAUDE_BASE="/opt/kamosu/claude-base.md"
 readonly TIMESTAMP_FILE=".last-compile-timestamp"
 readonly QUEUE_FILE=".ingest-queue"
 
@@ -52,27 +51,16 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force)
-                OPT_FORCE=true
-                shift
-                ;;
+                OPT_FORCE=true; shift ;;
             --dry-run)
-                OPT_DRY_RUN=true
-                shift
-                ;;
+                OPT_DRY_RUN=true; shift ;;
             --file)
-                if [[ $# -lt 2 ]]; then
-                    error "--file requires a path argument."
-                fi
-                OPT_FILE="$2"
-                shift 2
-                ;;
+                [[ $# -lt 2 ]] && error "--file requires a path argument."
+                OPT_FILE="$2"; shift 2 ;;
             -h|--help)
-                usage
-                exit 0
-                ;;
+                usage; exit 0 ;;
             *)
-                error "Unknown option: $1"
-                ;;
+                error "Unknown option: $1" ;;
         esac
     done
 }
@@ -114,46 +102,31 @@ detect_changed_files() {
         done < <(find raw/ -type f -print0 2>/dev/null)
     else
         # Normal mode — files newer than timestamp
+        local find_args=()
         if [[ -f "${TIMESTAMP_FILE}" ]]; then
-            while IFS= read -r -d '' file; do
-                files+=("${file}")
-            done < <(find raw/ -type f -newer "${TIMESTAMP_FILE}" -print0 2>/dev/null)
-        else
-            # No timestamp file — treat all files as new
-            while IFS= read -r -d '' file; do
-                files+=("${file}")
-            done < <(find raw/ -type f -print0 2>/dev/null)
+            find_args=(-newer "${TIMESTAMP_FILE}")
         fi
+        while IFS= read -r -d '' file; do
+            files+=("${file}")
+        done < <(find raw/ -type f "${find_args[@]}" -print0 2>/dev/null)
     fi
 
-    printf '%s\n' "${files[@]}"
-}
+    # Also check my-drafts/ for status: to-compile
+    if [[ -d "wiki/my-drafts" ]]; then
+        local draft_find_args=()
+        if [[ "${OPT_FORCE}" == false ]] && [[ -f "${TIMESTAMP_FILE}" ]]; then
+            draft_find_args=(-newer "${TIMESTAMP_FILE}")
+        fi
+        while IFS= read -r -d '' file; do
+            if grep -q 'status:.*to-compile' "${file}" 2>/dev/null; then
+                files+=("${file}")
+            fi
+        done < <(find wiki/my-drafts/ -type f -name '*.md' "${draft_find_args[@]}" -print0 2>/dev/null)
+    fi
 
-write_queue() {
-    local files=("$@")
-    printf '%s\n' "${files[@]}" > "${QUEUE_FILE}"
-}
-
-build_compile_prompt() {
-    local queue_file="$1"
-    cat <<EOF
-以下の指示に従って、raw データを wiki にコンパイルしてください。
-
-## 基本プロトコル
-$(cat "${CLAUDE_BASE}")
-
-## この知識ベースの設定
-$(cat CLAUDE.md)
-
-## コンパイル対象ファイル
-$(cat "${queue_file}")
-
-## 指示
-1. 上記のコンパイル対象ファイルを読み込んでください。
-2. Compilation Protocol（基本プロトコルのセクション3）の6ステップに従って処理してください。
-3. 新規記事の作成、または既存記事の更新を行ってください。
-4. 必ずインデックス（_master_index.md, _category/*.md, _cross_references.md）を更新してください。
-EOF
+    if [[ ${#files[@]} -gt 0 ]]; then
+        printf '%s\n' "${files[@]}"
+    fi
 }
 
 main() {
@@ -164,7 +137,7 @@ main() {
     git_pull_if_remote
 
     # Step 2: Detect changed files
-    info "Scanning for new/updated files in raw/..."
+    info "Scanning for new/updated files..."
     local changed_files
     changed_files=$(detect_changed_files)
 
@@ -193,10 +166,16 @@ main() {
 
     # Step 4: Invoke Claude Code
     info "Invoking Claude Code for compilation..."
-    local prompt
-    prompt=$(build_compile_prompt "${QUEUE_FILE}")
 
-    claude -p "${prompt}"
+    # Claude Code auto-reads CLAUDE.md from working directory.
+    # The prompt instructs it to also read claude-base.md for the protocol.
+    local prompt="Read /opt/kamosu/claude-base.md for the base protocol.
+Then read .ingest-queue for the list of files to compile.
+Follow the Compilation Protocol (Section 3) to process each file.
+Ensure all indexes (_master_index.md, _category/*.md, _cross_references.md) are updated.
+Append a compile entry to wiki/_log.md."
+
+    claude -p "${prompt}" --allowedTools "Edit,Write,Read,Glob,Grep"
 
     # Step 5: Update timestamp
     touch "${TIMESTAMP_FILE}"

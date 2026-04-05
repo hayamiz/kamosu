@@ -13,49 +13,49 @@
 - [x] templates/（_master_index.md, docker-compose.yml, .gitignore, .env.example） — 2026-04-05
 - [x] entrypoint.sh（OAuth credential のコンテナ引き継ぎ） — 2026-04-05
 - [x] docker-compose.claude-auth.yml テンプレート — 2026-04-05
-- [ ] kamosu-shell（claude コマンドの薄いラッパー、引数パススルー）
-- [ ] kamosu-compile（差分検出 + Claude Code 呼び出し + git commit）
-- [ ] my-drafts/ 対応
-  - [ ] kamosu-init で wiki/my-drafts/ ディレクトリを生成
-  - [ ] claude-base.md に my-drafts プロトコル追加（読むが編集しない、compile 時のソース認識、lint 対象外）
-  - [ ] kamosu-compile で status: to-compile の draft をソースとして認識
-- [ ] Dockerfile 改善: ENV KB_TOOLKIT_VERSION のハードコード廃止（ARG + --build-arg 方式に変更）
-- [ ] CHANGELOG.md 作成（Keep a Changelog フォーマット、[Unreleased] + 0.1.0 初期エントリ）
-- [ ] Makefile（開発・ビルド・リリースの自動化）
-  - [ ] build / build-nc（Docker イメージビルド、VERSION を --build-arg で渡す）
-  - [ ] test / test-init / smoke（テスト実行、スキャフォールディングテスト、一気通貫テスト）
-  - [ ] shell / run-init / clean（開発用ユーティリティ）
-  - [ ] help（デフォルトターゲット、ターゲット一覧表示）
-  - [ ] release-check（リリース前チェック）
-    - [ ] CHANGELOG.md に [VERSION] エントリ + 日付があるか
-    - [ ] git tag vX.Y.Z がまだ存在しないか
-    - [ ] ワーキングツリーがクリーンか
-    - [ ] main ブランチ上にいるか
-    - [ ] MINOR/MAJOR なら Migration Required セクションがあるか
-    - [ ] Migration Required 記載時に migrate/X.Y.Z.sh が存在するか
-  - [ ] release（release-check → git tag → push、確認プロンプト付き）
-  - [ ] push（Docker Hub プッシュ、確認プロンプト付き）
-- [ ] テスト基盤（tests/run_tests.sh テストランナー、CI 連携を見据えた終了コード管理）
-- [ ] テスト: kamosu-init スキャフォールディング検証
-  - [ ] 生成ディレクトリ構造が kamosu-design.md の仕様と一致するか
-  - [ ] テンプレート変数（`[TOPIC_NAME]` 等）の置換が正しいか
-  - [ ] 不正な KB 名（特殊文字、空文字、先頭ハイフン）のバリデーション
-  - [ ] 既存ディレクトリへの上書き防止
-- [ ] テスト: Docker イメージの検証
-  - [ ] 必要コマンドが PATH 上に存在するか（kamosu-init, claude, git, jq, python3）
-  - [ ] スクリプトの実行権限
-  - [ ] claude-base.md, templates/ の配置パス
-  - [ ] KB_TOOLKIT_VERSION 環境変数
-- [ ] テスト: entrypoint.sh の認証ハンドリング
-  - [ ] credential ファイルがある場合のコピー動作
-  - [ ] credential ファイルがない場合のスキップ（エラーにならないこと）
-  - [ ] .claude.json（onboarding flag）の生成
-- [ ] テスト: kamosu-compile（kamosu-compile 実装後）
-  - [ ] --dry-run で実際のコンパイルが走らないこと
-  - [ ] .last-compile-timestamp による差分検出
-  - [ ] --file による特定ファイル指定
-  - [ ] raw/ が空の場合の正常終了
-- [ ] テスト: プロトコル文書の整合性（claude-base.md と kamosu-init の生成物の構造一致）
+- [x] kamosu-shell（claude コマンドの薄いラッパー、引数パススルー） — 2026-04-05
+- [x] kamosu-compile（差分検出 + Claude Code 呼び出し + git commit） — 2026-04-05
+- [x] my-drafts/ 対応 — 2026-04-05
+  - [x] kamosu-init で wiki/my-drafts/ ディレクトリを生成
+  - [x] claude-base.md に my-drafts プロトコル追加（読むが編集しない、compile 時のソース認識、lint 対象外）
+  - [x] kamosu-compile で status: to-compile の draft をソースとして認識
+- [x] Dockerfile 改善: ENV KB_TOOLKIT_VERSION のハードコード廃止（ARG + --build-arg 方式に変更） — 2026-04-05
+- [x] CHANGELOG.md 作成（Keep a Changelog フォーマット、[Unreleased] + 0.1.0 初期エントリ） — 2026-04-05
+- [x] Makefile（開発・ビルド・リリースの自動化） — 2026-04-05
+  - [x] build / build-nc（Docker イメージビルド、VERSION を --build-arg で渡す）
+  - [x] test / test-init / smoke（テスト実行、スキャフォールディングテスト、一気通貫テスト）
+  - [x] shell / run-init / clean（開発用ユーティリティ）
+  - [x] help（デフォルトターゲット、ターゲット一覧表示）
+  - [x] release-check（リリース前チェック）
+    - [x] CHANGELOG.md に [VERSION] エントリ + 日付があるか
+    - [x] git tag vX.Y.Z がまだ存在しないか
+    - [x] ワーキングツリーがクリーンか
+    - [x] main ブランチ上にいるか
+    - [x] MINOR/MAJOR なら Migration Required セクションがあるか
+    - [x] ~~Migration Required 記載時に migrate/X.Y.Z.sh が存在するか~~ → Phase 2 に移動
+  - [x] release（release-check → git tag → push、確認プロンプト付き）
+  - [x] push（Docker Hub プッシュ、確認プロンプト付き）
+- [x] テスト基盤（tests/run_tests.sh テストランナー、CI 連携を見据えた終了コード管理） — 2026-04-05
+- [x] テスト: kamosu-init スキャフォールディング検証 — 2026-04-05
+  - [x] 生成ディレクトリ構造が kamosu-design.md の仕様と一致するか
+  - [x] テンプレート変数（`[TOPIC_NAME]` 等）の置換が正しいか
+  - [x] 不正な KB 名（特殊文字、空文字、先頭ハイフン）のバリデーション
+  - [x] 既存ディレクトリへの上書き防止
+- [x] テスト: Docker イメージの検証 — 2026-04-05
+  - [x] 必要コマンドが PATH 上に存在するか（kamosu-init, claude, git, jq, python3）
+  - [x] スクリプトの実行権限
+  - [x] claude-base.md, templates/ の配置パス
+  - [x] KB_TOOLKIT_VERSION 環境変数
+- [x] テスト: entrypoint.sh の認証ハンドリング — 2026-04-05
+  - [x] credential ファイルがある場合のコピー動作
+  - [x] credential ファイルがない場合のスキップ（エラーにならないこと）
+  - [x] .claude.json（onboarding flag）の生成
+- [x] テスト: kamosu-compile（--dry-run ベース、claude CLI 呼び出し前のロジック） — 2026-04-05
+  - [x] --dry-run で実際のコンパイルが走らないこと
+  - [x] .last-compile-timestamp による差分検出
+  - [x] --file で存在しないファイル指定時のエラー
+  - [x] raw/ が空の場合の正常終了
+- [x] テスト: プロトコル文書の整合性（claude-base.md と kamosu-init の生成物の構造一致） — 2026-04-05
 
 ## Phase 2: Quality & Search
 
@@ -72,6 +72,7 @@
   - [ ] --to オプション（特定バージョンまで適用）
   - [ ] マイグレーション後の .kb-toolkit-version 更新 + git commit
 - [ ] バージョン互換性チェック（entrypoint.sh またはスクリプト起動時にデータ版とイメージ版を比較）
+- [ ] release-check: Migration Required 記載時に migrate/X.Y.Z.sh が存在するかチェック（kamosu-migrate 実装と合わせて追加）
 
 ## Phase 3: Lab Deployment
 
@@ -93,4 +94,6 @@
 
 ## Backlog
 
-<!-- 実装中に発見した追加タスクをここに追加 -->
+- kamosu-compile テスト: `claude -p` 呼び出し後のフロー（タイムスタンプ更新、git commit、push）はダミー claude スクリプトでモック可能。必要になったら追加
+- release-check の migrate/ 整合性チェック: kamosu-migrate 実装（Phase 2）と合わせて追加
+- プロトコル文書の整合性テスト: claude-base.md が前提とするディレクトリ構造と kamosu-init の生成物を grep で突き合わせる。低優先度だが有用

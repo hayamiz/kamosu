@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_NAME="kamosu-shell"
+
+usage() {
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [CLAUDE_OPTIONS...]
+
+Launch Claude Code interactive session in the current kamosu data repository.
+All arguments are passed through to the 'claude' command.
+
+Examples:
+  # Interactive session
+  docker compose run kb ${SCRIPT_NAME}
+
+  # One-shot query
+  docker compose run kb ${SCRIPT_NAME} -p "Summarize the wiki contents"
+
+  # With model override
+  docker compose run kb ${SCRIPT_NAME} --model claude-sonnet-4-20250514
+
+Options:
+  -h, --help    Show this help message (use -- -h to pass -h to claude)
+EOF
+}
+
+error() {
+    echo "ERROR: $1" >&2
+    exit 1
+}
+
+main() {
+    # Show help only if -h/--help is the first argument
+    if [[ $# -gt 0 ]] && [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+
+    # Verify we're in a kamosu data repository
+    if [[ ! -f /workspace/.kb-toolkit-version ]] && [[ ! -f ./.kb-toolkit-version ]]; then
+        error "Not in a kamosu data repository (missing .kb-toolkit-version)."
+    fi
+
+    exec claude "$@"
+}
+
+main "$@"

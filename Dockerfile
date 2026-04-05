@@ -28,9 +28,11 @@ RUN mkdir -p /opt/kamosu/scripts /opt/kamosu/templates /opt/kamosu/tools
 # Copy VERSION
 COPY VERSION /opt/kamosu/VERSION
 
-# Set toolkit version from VERSION file
-RUN echo "export KB_TOOLKIT_VERSION=$(cat /opt/kamosu/VERSION | tr -d '[:space:]')" >> /etc/profile.d/kamosu.sh
-ENV KB_TOOLKIT_VERSION=0.1.0
+# Set toolkit version from VERSION file (can be overridden with --build-arg)
+ARG KB_TOOLKIT_VERSION
+RUN if [ -z "${KB_TOOLKIT_VERSION}" ]; then KB_TOOLKIT_VERSION=$(cat /opt/kamosu/VERSION | tr -d '[:space:]'); fi && \
+    echo "export KB_TOOLKIT_VERSION=${KB_TOOLKIT_VERSION}" >> /etc/profile.d/kamosu.sh
+ENV KB_TOOLKIT_VERSION=${KB_TOOLKIT_VERSION:-0.1.0}
 
 # Copy claude-base.md
 COPY claude-base.md /opt/kamosu/claude-base.md
