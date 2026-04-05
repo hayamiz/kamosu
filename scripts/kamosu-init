@@ -6,23 +6,50 @@ readonly TEMPLATES_DIR="/opt/kamosu/templates"
 readonly OUTPUT_BASE="/output"
 readonly VERSION_FILE="/opt/kamosu/VERSION"
 
+# Global state (set by parse_args / prompt_auth_mode)
+AUTH_MODE=""
+AWS_PROFILE_VALUE=""
+AWS_REGION_VALUE=""
+RECONFIGURE=false
+KB_NAME=""
+
 usage() {
     cat <<EOF
-Usage: ${SCRIPT_NAME} <kb-name>
+Usage: ${SCRIPT_NAME} [OPTIONS] <kb-name>
+       ${SCRIPT_NAME} --reconfigure [OPTIONS]
 
 Initialize a new kamosu knowledge base data repository.
 
 Arguments:
-  kb-name    Name of the knowledge base (required, alphanumeric and hyphens only)
+  kb-name    Name of the knowledge base (alphanumeric and hyphens only)
 
-Output:
-  Creates ${OUTPUT_BASE}/kb-<kb-name>/ with the full directory structure.
+Authentication options:
+  --claude-oauth        Use Claude OAuth (host credential mount)
+  --claude-bedrock      Use AWS Bedrock
+  --aws-profile <name>  AWS profile name (with --claude-bedrock)
+  --aws-region <region> AWS region (with --claude-bedrock, required)
 
-Example:
-  docker run --rm -v \$(pwd):/output ghcr.io/goda-lab/kamosu:latest ${SCRIPT_NAME} my-topic
+Other options:
+  --reconfigure   Reconfigure authentication for existing data repository
+  -h, --help      Show this help message
 
-Options:
-  -h, --help    Show this help message
+If no authentication option is given, an interactive prompt is shown.
+
+Examples:
+  # Interactive (will prompt for auth mode)
+  docker run --rm -it -v \$(pwd):/output hayamiz/kamosu:latest ${SCRIPT_NAME} my-topic
+
+  # Non-interactive: Claude OAuth
+  docker run --rm -v \$(pwd):/output hayamiz/kamosu:latest ${SCRIPT_NAME} --claude-oauth my-topic
+
+  # Non-interactive: AWS Bedrock with profile
+  docker run --rm -v \$(pwd):/output hayamiz/kamosu:latest ${SCRIPT_NAME} --claude-bedrock --aws-profile myprof --aws-region us-east-1 my-topic
+
+  # Non-interactive: AWS Bedrock with EC2 IAM Role
+  docker run --rm -v \$(pwd):/output hayamiz/kamosu:latest ${SCRIPT_NAME} --claude-bedrock --aws-region us-east-1 my-topic
+
+  # Reconfigure existing repository
+  docker compose run kb ${SCRIPT_NAME} --reconfigure
 EOF
 }
 
@@ -43,20 +70,149 @@ validate_name() {
     fi
 }
 
-main() {
-    if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
-        usage
-        exit 0
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage; exit 0 ;;
+            --claude-oauth)
+                AUTH_MODE="oauth"; shift ;;
+            --claude-bedrock)
+                AUTH_MODE="bedrock"; shift ;;
+            --aws-profile)
+                [[ $# -lt 2 ]] && error "--aws-profile requires a value"
+                AWS_PROFILE_VALUE="$2"; shift 2 ;;
+            --aws-region)
+                [[ $# -lt 2 ]] && error "--aws-region requires a value"
+                AWS_REGION_VALUE="$2"; shift 2 ;;
+            --reconfigure)
+                RECONFIGURE=true; shift ;;
+            -*)
+                error "Unknown option: $1" ;;
+            *)
+                [[ -n "${KB_NAME}" ]] && error "Unexpected argument: $1"
+                KB_NAME="$1"; shift ;;
+        esac
+    done
+}
+
+validate_args() {
+    if [[ "${RECONFIGURE}" == true ]]; then
+        [[ -n "${KB_NAME}" ]] && error "--reconfigure does not accept a KB name argument."
+    else
+        [[ -z "${KB_NAME}" ]] && error "KB name is required."
     fi
 
-    local kb_name="$1"
-    validate_name "${kb_name}"
-
-    local kb_dir="${OUTPUT_BASE}/kb-${kb_name}"
-
-    if [[ -d "${kb_dir}" ]]; then
-        error "Directory '${kb_dir}' already exists. Remove it first or choose a different name."
+    # --aws-profile / --aws-region require --claude-bedrock
+    if [[ -n "${AWS_PROFILE_VALUE}" || -n "${AWS_REGION_VALUE}" ]] && [[ "${AUTH_MODE}" != "bedrock" ]]; then
+        error "--aws-profile and --aws-region require --claude-bedrock."
     fi
+
+    # --claude-bedrock requires --aws-region
+    if [[ "${AUTH_MODE}" == "bedrock" ]] && [[ -z "${AWS_REGION_VALUE}" ]]; then
+        error "--claude-bedrock requires --aws-region."
+    fi
+
+    # --claude-oauth and --claude-bedrock are mutually exclusive (already handled by overwrite, but be explicit)
+    # Resolve bedrock sub-mode: if --aws-profile is omitted, it's EC2 IAM Role mode
+    if [[ "${AUTH_MODE}" == "bedrock" ]] && [[ -z "${AWS_PROFILE_VALUE}" ]]; then
+        AUTH_MODE="bedrock-iam"
+    fi
+}
+
+prompt_auth_mode() {
+    # Non-interactive environment: fall back to default
+    if [[ ! -t 0 ]]; then
+        AUTH_MODE="oauth"
+        info "Non-interactive environment detected. Using default: Claude OAuth."
+        return
+    fi
+
+    cat <<'EOF'
+
+Select authentication mode for Claude Code:
+
+  1) Claude OAuth (default)
+     Mount host ~/.claude/ credentials into container.
+     Requires: 'claude' CLI authenticated on host.
+
+  2) AWS Bedrock (credentials/profile)
+     Use AWS CLI profile for Bedrock access.
+     Requires: AWS CLI configured with named profile.
+
+  3) AWS Bedrock (EC2 IAM Role)
+     Use EC2 instance IAM role for Bedrock access.
+     Requires: EC2 instance with Bedrock-enabled IAM role.
+
+EOF
+
+    local choice
+    read -rp "Enter choice [1-3] (default: 1): " choice
+    choice="${choice:-1}"
+
+    case "${choice}" in
+        1)
+            AUTH_MODE="oauth"
+            ;;
+        2)
+            AUTH_MODE="bedrock"
+            read -rp "AWS Profile name: " AWS_PROFILE_VALUE
+            [[ -z "${AWS_PROFILE_VALUE}" ]] && error "AWS Profile name is required."
+            read -rp "AWS Region (e.g., us-east-1): " AWS_REGION_VALUE
+            [[ -z "${AWS_REGION_VALUE}" ]] && error "AWS Region is required."
+            ;;
+        3)
+            AUTH_MODE="bedrock-iam"
+            read -rp "AWS Region (e.g., us-east-1): " AWS_REGION_VALUE
+            [[ -z "${AWS_REGION_VALUE}" ]] && error "AWS Region is required."
+            ;;
+        *)
+            error "Invalid choice: ${choice}"
+            ;;
+    esac
+}
+
+generate_env_file() {
+    local output_path="$1"
+
+    case "${AUTH_MODE}" in
+        oauth)
+            cat > "${output_path}" <<'ENVEOF'
+# Authentication: Claude OAuth
+# Host ~/.claude/ credentials are mounted into the container.
+# Run 'claude' on host to authenticate before using kamosu.
+COMPOSE_FILE=docker-compose.yml:docker-compose.claude-auth.yml
+
+# Claude Model (e.g., claude-sonnet-4-20250514)
+ANTHROPIC_MODEL=
+ENVEOF
+            ;;
+        bedrock)
+            cat > "${output_path}" <<ENVEOF
+# Authentication: AWS Bedrock (credentials/profile)
+COMPOSE_FILE=docker-compose.yml
+AWS_PROFILE=${AWS_PROFILE_VALUE}
+AWS_REGION=${AWS_REGION_VALUE}
+
+# Claude Model (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)
+ANTHROPIC_MODEL=
+ENVEOF
+            ;;
+        bedrock-iam)
+            cat > "${output_path}" <<ENVEOF
+# Authentication: AWS Bedrock (EC2 IAM Role)
+COMPOSE_FILE=docker-compose.yml
+AWS_REGION=${AWS_REGION_VALUE}
+
+# Claude Model (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)
+ANTHROPIC_MODEL=
+ENVEOF
+            ;;
+    esac
+}
+
+scaffold() {
+    local kb_dir="$1"
 
     # Read toolkit version
     local version="latest"
@@ -64,7 +220,7 @@ main() {
         version=$(cat "${VERSION_FILE}" | tr -d '[:space:]')
     fi
 
-    info "Creating knowledge base 'kb-${kb_name}'..."
+    info "Creating knowledge base 'kb-${KB_NAME}'..."
 
     # 1. Create directory structure
     info "Creating directory structure..."
@@ -73,16 +229,20 @@ main() {
     mkdir -p "${kb_dir}/raw/repos"
     mkdir -p "${kb_dir}/wiki/_category"
     mkdir -p "${kb_dir}/wiki/concepts"
+    mkdir -p "${kb_dir}/wiki/my-drafts"
     mkdir -p "${kb_dir}/outputs"
 
     # 2. Generate files from templates
     info "Generating files from templates..."
 
     # CLAUDE.md — replace TOPIC_NAME placeholder
-    sed "s/\[TOPIC_NAME\]/${kb_name}/g" "${TEMPLATES_DIR}/CLAUDE.md.template" > "${kb_dir}/CLAUDE.md"
+    sed "s/\[TOPIC_NAME\]/${KB_NAME}/g" "${TEMPLATES_DIR}/kb-claude.md.tmpl" > "${kb_dir}/CLAUDE.md"
 
     # docker-compose.yml
     cp "${TEMPLATES_DIR}/docker-compose.yml.tmpl" "${kb_dir}/docker-compose.yml"
+
+    # docker-compose.claude-auth.yml (OAuth credential mount override)
+    cp "${TEMPLATES_DIR}/docker-compose.claude-auth.yml.tmpl" "${kb_dir}/docker-compose.claude-auth.yml"
 
     # .gitignore
     cp "${TEMPLATES_DIR}/.gitignore.tmpl" "${kb_dir}/.gitignore"
@@ -105,17 +265,97 @@ main() {
 <!-- カテゴリ横断の関連性がコンパイル時に追加されます -->
 EOF
 
+    # _log.md — empty operation log
+    cat > "${kb_dir}/wiki/_log.md" <<EOF
+# Log
+
+<!-- compile, lint, query の操作ログが時系列で追記されます -->
+EOF
+
     # 4. Record toolkit version
     echo "${version}" > "${kb_dir}/.kb-toolkit-version"
+}
+
+print_completion_message() {
+    local kb_dir="$1"
 
     info "Done! Knowledge base created at: ${kb_dir}"
     info ""
     info "Next steps:"
-    info "  1. cd kb-${kb_name}"
+    info "  1. cd kb-${KB_NAME}"
     info "  2. Edit CLAUDE.md to configure your research domain"
     info "  3. git init && git remote add origin <your-remote-url>"
-    info "  4. cp .env.example .env && edit .env with your AWS credentials"
+
+    case "${AUTH_MODE}" in
+        oauth)
+            info "  4. Authenticate Claude CLI on host: claude login"
+            ;;
+        bedrock)
+            info "  4. Ensure AWS CLI profile '${AWS_PROFILE_VALUE}' is configured"
+            ;;
+        bedrock-iam)
+            info "  4. Ensure EC2 instance has Bedrock-enabled IAM role"
+            ;;
+    esac
+
     info "  5. Add raw data to raw/ and run kamosu-compile"
+    info ""
+    info "  To change authentication later: kamosu-init --reconfigure"
+}
+
+reconfigure() {
+    # Find data repository root
+    local kb_dir
+    if [[ -f "/workspace/.kb-toolkit-version" ]]; then
+        kb_dir="/workspace"
+    elif [[ -f "./.kb-toolkit-version" ]]; then
+        kb_dir="."
+    else
+        error "Not in a kamosu data repository (missing .kb-toolkit-version). Run from within a data repo or via 'docker compose run kb kamosu-init --reconfigure'."
+    fi
+
+    # Backup existing .env
+    if [[ -f "${kb_dir}/.env" ]]; then
+        local backup_name=".env.backup.$(date +%Y%m%d-%H%M%S)"
+        cp "${kb_dir}/.env" "${kb_dir}/${backup_name}"
+        info "Backed up existing .env to ${backup_name}"
+    fi
+
+    # Determine auth mode (interactive or from args)
+    if [[ -z "${AUTH_MODE}" ]]; then
+        prompt_auth_mode
+    fi
+
+    # Generate new .env
+    generate_env_file "${kb_dir}/.env"
+    info "Authentication reconfigured successfully."
+}
+
+main() {
+    parse_args "$@"
+    validate_args
+
+    if [[ "${RECONFIGURE}" == true ]]; then
+        reconfigure
+        return
+    fi
+
+    validate_name "${KB_NAME}"
+
+    local kb_dir="${OUTPUT_BASE}/kb-${KB_NAME}"
+
+    if [[ -d "${kb_dir}" ]]; then
+        error "Directory '${kb_dir}' already exists. Remove it first or choose a different name."
+    fi
+
+    # Determine auth mode if not specified via args
+    if [[ -z "${AUTH_MODE}" ]]; then
+        prompt_auth_mode
+    fi
+
+    scaffold "${kb_dir}"
+    generate_env_file "${kb_dir}/.env"
+    print_completion_message "${kb_dir}"
 }
 
 main "$@"

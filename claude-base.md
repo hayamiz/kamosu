@@ -18,6 +18,7 @@ wiki/
 │   ├── <category-name>.md  # 各カテゴリの記事一覧と要約
 │   └── ...
 ├── _cross_references.md    # カテゴリ横断の関連性マップ
+├── _log.md                 # 操作ログ（時系列、append-only）
 └── concepts/               # 記事本体
     ├── <article-slug>.md
     └── ...
@@ -98,6 +99,31 @@ Last updated: YYYY-MM-DD
 - 新しい記事がカテゴリ横断の関連性を持つ場合、エントリを追加する
 - 記事を削除した場合、参照しているエントリを更新または削除する
 - 関連性は双方向で記述する（category-a ↔ category-b の形式）
+
+### 1.5 _log.md
+
+操作ログを時系列で記録するファイル。append-only で、最新のエントリが末尾に追加されます。
+
+**フォーマット:**
+
+```markdown
+# Log
+
+## [YYYY-MM-DD] compile | ソース名
+- 処理内容の1行要約
+- 作成/更新した記事: [[article-a]], [[article-b]]
+
+## [YYYY-MM-DD] lint | check-only
+- Summary: orphans=0, contradictions=1, missing-sources=0, suggestions=3, inconsistencies=0
+
+## [YYYY-MM-DD] query | 質問の要約
+- 回答に使用した記事: [[article-x]], [[article-y]]
+```
+
+**保守ルール:**
+- compile, lint, query の各操作の完了時にエントリを追加する
+- プレフィックスは `## [YYYY-MM-DD] <operation> | <title>` の形式を厳守する（grep でパース可能にするため）
+- 過去のエントリは編集・削除しない（append-only）
 
 ---
 
@@ -198,6 +224,10 @@ raw/ の新規データを wiki 記事にコンパイルする際は、以下の
   - `date_updated` を更新する
   - `sources` に新しいソースを追加する
   - Main Content に新しい情報を統合する
+- **矛盾の検出と記録**: 新しいソースの内容が既存記事の記述と矛盾する場合、以下を行う:
+  - 記事の Main Content 内に `> **⚠ Contradiction**:` ブロック引用で矛盾を明示する
+  - 両方のソースを引用し、どちらが新しい情報かを記載する
+  - 解決できる場合は記述を更新し、判断が難しい場合は矛盾を残してユーザーの判断を仰ぐ
 
 ### Step 5: バックリンクの追加
 - 新規・更新記事から参照される既存記事の Related Articles セクションにバックリンクを追加する
@@ -210,6 +240,14 @@ raw/ の新規データを wiki 記事にコンパイルする際は、以下の
 3. `_cross_references.md` — カテゴリ横断の新しい関連性があれば追加
 
 **重要**: インデックス更新を忘れると wiki の整合性が失われます。必ず全ステップを完了してください。
+
+### Step 7: ログ追記
+`wiki/_log.md` に compile エントリを追加する:
+```markdown
+## [YYYY-MM-DD] compile | <ソースファイル名 or 要約>
+- 処理内容の1行要約
+- 作成/更新した記事: [[article-a]], [[article-b]]
+```
 
 ---
 

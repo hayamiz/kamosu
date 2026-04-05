@@ -48,5 +48,6 @@ ENV PATH="/opt/kamosu/scripts:${PATH}"
 # Working directory for data repositories
 WORKDIR /workspace
 
-# Default command
+# Entrypoint handles credential setup, then passes through to command
+ENTRYPOINT ["/opt/kamosu/scripts/entrypoint.sh"]
 CMD ["bash"]

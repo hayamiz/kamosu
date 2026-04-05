@@ -49,7 +49,7 @@ kamosu-design.md の "Section 3.3 > kamosu-compile" の仕様に従う。
 - --force, --dry-run, --file オプション対応
 
 ### 6. Templates
-- CLAUDE.md.template: kamosu-design.md の "Section 3.2" のフォーマット。ユーザーが編集する箇所を [PLACEHOLDER] で明示
+- kb-claude.md.tmpl: kamosu-design.md の "Section 3.2" のフォーマット。ユーザーが編集する箇所を [PLACEHOLDER] で明示
 - _master_index.md: 空の初期状態
 - docker-compose.yml.tmpl: kamosu-design.md の "Section 4.3" の内容
 - .gitignore.tmpl: .env, *.pyc, __pycache__/, .last-compile-timestamp, .ingest-queue
