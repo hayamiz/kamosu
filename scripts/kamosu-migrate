@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_NAME="kamosu-migrate"
+readonly MIGRATE_DIR="/opt/kamosu/migrate"
+readonly VERSION_FILE="/opt/kamosu/VERSION"
+
+# Options
+OPT_DRY_RUN=false
+OPT_FORCE=false
+OPT_TARGET=""
+
+usage() {
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [OPTIONS]
+
+Migrate a kamosu data repository to match the current toolkit version.
+Applies migration scripts from migrate/ in ascending version order.
+
+Options:
+  --dry-run       Show migrations that would be applied without executing
+  --force         Run even if working tree has uncommitted changes (skips git commit)
+  --to <version>  Migrate to a specific version instead of current image version
+  -h, --help      Show this help message
+
+Examples:
+  docker compose run kb ${SCRIPT_NAME}
+  docker compose run kb ${SCRIPT_NAME} --dry-run
+  docker compose run kb ${SCRIPT_NAME} --to 0.3.0
+  docker compose run kb ${SCRIPT_NAME} --force
+EOF
+}
+
+error() {
+    echo "ERROR: $1" >&2
+    echo "Run '${SCRIPT_NAME} --help' for usage information." >&2
+    exit 1
+}
+
+info() {
+    echo "[${SCRIPT_NAME}] $1"
+}
+
+warn() {
+    echo "[${SCRIPT_NAME}] WARNING: $1" >&2
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                OPT_DRY_RUN=true; shift ;;
+            --force)
+                OPT_FORCE=true; shift ;;
+            --to)
+                [[ $# -lt 2 ]] && error "--to requires a version argument"
+                OPT_TARGET="$2"; shift 2 ;;
+            -h|--help)
+                usage; exit 0 ;;
+            *)
+                error "Unknown option: $1" ;;
+        esac
+    done
+}
+
+# Compare two semver strings. Returns:
+#   0 if equal, 1 if $1 > $2, 2 if $1 < $2
+version_compare() {
+    if [[ "$1" == "$2" ]]; then
+        return 0
+    fi
+
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+
+    for ((i=0; i<3; i++)); do
+        local v1="${ver1[i]:-0}"
+        local v2="${ver2[i]:-0}"
+        if ((v1 > v2)); then
+            return 1
+        elif ((v1 < v2)); then
+            return 2
+        fi
+    done
+
+    return 0
+}
+
+# Returns 0 if $1 > $2
+version_gt() {
+    version_compare "$1" "$2"
+    [[ $? -eq 1 ]]
+}
+
+# Returns 0 if $1 <= $2
+version_le() {
+    version_compare "$1" "$2"
+    local result=$?
+    [[ $result -eq 0 ]] || [[ $result -eq 2 ]]
+}
+
+main() {
+    parse_args "$@"
+
+    # Verify we're in a data repository
+    if [[ ! -f ".kb-toolkit-version" ]]; then
+        error "Not in a kamosu data repository (missing .kb-toolkit-version)."
+    fi
+
+    local current_version
+    current_version=$(cat .kb-toolkit-version | tr -d '[:space:]')
+
+    # Determine target version
+    local target_version
+    if [[ -n "${OPT_TARGET}" ]]; then
+        target_version="${OPT_TARGET}"
+    elif [[ -f "${VERSION_FILE}" ]]; then
+        target_version=$(cat "${VERSION_FILE}" | tr -d '[:space:]')
+    else
+        error "Cannot determine target version. Use --to <version> or ensure VERSION file exists."
+    fi
+
+    info "Current data version: ${current_version}"
+    info "Target version: ${target_version}"
+
+    # Check if migration is needed
+    if [[ "${current_version}" == "${target_version}" ]]; then
+        info "Already at version ${target_version}. No migration needed."
+        exit 0
+    fi
+
+    # Check direction
+    if version_gt "${current_version}" "${target_version}"; then
+        error "Data version (${current_version}) is newer than target (${target_version}). Update the toolkit image."
+    fi
+
+    # Git dirty check (unless --force)
+    if [[ "${OPT_FORCE}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+            error "Working tree has uncommitted changes. Commit or stash first, or use --force."
+        fi
+    fi
+
+    # Find applicable migration scripts
+    local scripts=()
+    if [[ -d "${MIGRATE_DIR}" ]]; then
+        for script in "${MIGRATE_DIR}"/*.sh; do
+            [[ -f "${script}" ]] || continue
+            local script_version
+            script_version=$(basename "${script}" .sh)
+
+            # Include if: current < script_version <= target
+            if version_gt "${script_version}" "${current_version}" && version_le "${script_version}" "${target_version}"; then
+                scripts+=("${script}")
+            fi
+        done
+    fi
+
+    # Sort scripts by version (they should already be in order from glob, but be safe)
+    IFS=$'\n' scripts=($(sort -V <<<"${scripts[*]}" 2>/dev/null)) || true
+    unset IFS
+
+    if [[ ${#scripts[@]} -eq 0 ]]; then
+        info "No migration scripts to apply (${current_version} → ${target_version})."
+        info "Updating .kb-toolkit-version to ${target_version}."
+
+        if [[ "${OPT_DRY_RUN}" == false ]]; then
+            echo "${target_version}" > .kb-toolkit-version
+
+            if [[ "${OPT_FORCE}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                git add .kb-toolkit-version
+                git commit -m "migrate: ${current_version} → ${target_version} (no migration scripts)" || true
+            fi
+        fi
+        exit 0
+    fi
+
+    info "Migrations to apply:"
+    for script in "${scripts[@]}"; do
+        info "  $(basename "${script}")"
+    done
+
+    if [[ "${OPT_DRY_RUN}" == true ]]; then
+        info "(dry-run mode — no migrations executed)"
+        exit 0
+    fi
+
+    # Apply each migration
+    for script in "${scripts[@]}"; do
+        local script_name
+        script_name=$(basename "${script}")
+        info "Applying ${script_name}..."
+        bash "${script}"
+        info "  ${script_name} completed."
+    done
+
+    # Update version
+    echo "${target_version}" > .kb-toolkit-version
+    info "Updated .kb-toolkit-version to ${target_version}."
+
+    # Git commit (unless --force skipped dirty check)
+    if [[ "${OPT_FORCE}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        info "Committing migration changes..."
+        git add -A
+        git commit -m "migrate: ${current_version} → ${target_version}" || warn "Nothing to commit."
+    else
+        if [[ "${OPT_FORCE}" == true ]]; then
+            info "Force mode: skipping git commit. Commit manually when ready."
+        fi
+    fi
+
+    info "Migration complete: ${current_version} → ${target_version}"
+}
+
+main "$@"

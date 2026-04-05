@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_NAME="kamosu-search"
+readonly SEARCH_SCRIPT="/opt/kamosu/tools/search-engine/searcher.py"
+
+# Options
+OPT_TOP=5
+OPT_REBUILD=false
+OPT_JSON=false
+QUERY=""
+
+usage() {
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [OPTIONS] <query>
+
+Search wiki articles using TF-IDF based full-text search.
+
+Arguments:
+  query          Search query string
+
+Options:
+  --top <N>          Number of results to show (default: 5)
+  --rebuild-index    Force rebuild the search index
+  --json             Output results as JSON (for LLM tool integration)
+  -h, --help         Show this help message
+
+Examples:
+  docker compose run kb ${SCRIPT_NAME} "query execution optimization"
+  docker compose run kb ${SCRIPT_NAME} --top 10 "power management"
+  docker compose run kb ${SCRIPT_NAME} --json "NVMe idle"
+EOF
+}
+
+error() {
+    echo "ERROR: $1" >&2
+    echo "Run '${SCRIPT_NAME} --help' for usage information." >&2
+    exit 1
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --top)
+                [[ $# -lt 2 ]] && error "--top requires a number"
+                OPT_TOP="$2"; shift 2 ;;
+            --rebuild-index)
+                OPT_REBUILD=true; shift ;;
+            --json)
+                OPT_JSON=true; shift ;;
+            -h|--help)
+                usage; exit 0 ;;
+            -*)
+                error "Unknown option: $1" ;;
+            *)
+                QUERY="$1"; shift ;;
+        esac
+    done
+
+    [[ -z "${QUERY}" ]] && error "Query string is required."
+}
+
+main() {
+    parse_args "$@"
+
+    if [[ ! -d "wiki" ]]; then
+        error "wiki/ directory not found. Are you in a kamosu data repository?"
+    fi
+
+    local args=("--top" "${OPT_TOP}" "--wiki-dir" "wiki")
+
+    if [[ "${OPT_REBUILD}" == true ]]; then
+        args+=("--rebuild-index")
+    fi
+
+    if [[ "${OPT_JSON}" == true ]]; then
+        args+=("--json")
+    fi
+
+    args+=("${QUERY}")
+
+    python3 "${SEARCH_SCRIPT}" "${args[@]}"
+}
+
+main "$@"

@@ -59,20 +59,20 @@
 
 ## Phase 2: Quality & Search
 
-- [ ] kamosu-lint（健全性チェック + レポート生成）
-- [ ] kamosu-search（TF-IDF ベース、または qmd 統合を検討）
-  - [ ] qmd（tobi/qmd）との比較評価: 自前実装 vs qmd 推奨/統合
-- [ ] 信頼度タグ: frontmatter に `confidence: high|medium|low` 追加（Article Format 拡張）
-- [ ] Query 結果の wiki ファイリングプロトコル（outputs/ → wiki/concepts/ への昇格フロー）
-- [ ] kamosu-migrate（バージョン間マイグレーション）
-  - [ ] migrate/ ディレクトリ構造とスクリプト規約
-  - [ ] チェーン適用ロジック（現在バージョン → ターゲットまで昇順実行）
-  - [ ] Git ダーティチェック（未コミット変更があればエラー、--force で無視）
-  - [ ] --dry-run（実行予定の一覧表示）
-  - [ ] --to オプション（特定バージョンまで適用）
-  - [ ] マイグレーション後の .kb-toolkit-version 更新 + git commit
-- [ ] バージョン互換性チェック（entrypoint.sh またはスクリプト起動時にデータ版とイメージ版を比較）
-- [ ] release-check: Migration Required 記載時に migrate/X.Y.Z.sh が存在するかチェック（kamosu-migrate 実装と合わせて追加）
+- [x] kamosu-lint（健全性チェック + レポート生成） — 2026-04-05
+- [x] kamosu-search（TF-IDF ベース全文検索 CLI + Python 検索エンジン） — 2026-04-05
+  - [ ] qmd（tobi/qmd）との比較評価: 将来的に qmd 推奨/統合を検討（DEVLOG 参照）
+- [ ] 信頼度タグ: frontmatter に `confidence: high|medium|low` 追加 — 将来検討項目（DEVLOG 参照）
+- [ ] Query 結果の wiki ファイリングプロトコル — 将来検討項目（DEVLOG 参照）
+- [x] kamosu-migrate（バージョン間マイグレーション） — 2026-04-05
+  - [x] migrate/ ディレクトリ構造とスクリプト規約
+  - [x] チェーン適用ロジック（現在バージョン → ターゲットまで昇順実行）
+  - [x] Git ダーティチェック（未コミット変更があればエラー、--force で無視）
+  - [x] --dry-run（実行予定の一覧表示）
+  - [x] --to オプション（特定バージョンまで適用）
+  - [x] マイグレーション後の .kb-toolkit-version 更新 + git commit
+- [x] バージョン互換性チェック（entrypoint.sh 起動時にデータ版とイメージ版を比較） — 2026-04-05
+- [x] release-check: Migration Required 記載時に migrate/X.Y.Z.sh が存在するかチェック — 2026-04-05
 
 ## Phase 3: Lab Deployment
 

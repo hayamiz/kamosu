@@ -76,7 +76,13 @@ release-check:
 	if [ "$$BRANCH" != "main" ] && [ "$$BRANCH" != "master" ]; then \
 		echo "FAIL: not on main/master branch (on $$BRANCH)"; exit 1; \
 	fi
-	@# 6. Check Migration Required section for MINOR/MAJOR bumps
+	@# 6. If CHANGELOG mentions Migration Required with a script reference, check it exists
+	@if grep -A5 '## \[$(VERSION)\]' CHANGELOG.md | grep -q 'migrate/'; then \
+		SCRIPT=$$(grep -A5 '## \[$(VERSION)\]' CHANGELOG.md | grep -oP 'migrate/\S+'); \
+		if [ -n "$$SCRIPT" ] && [ ! -f "$$SCRIPT" ]; then \
+			echo "FAIL: CHANGELOG references $$SCRIPT but file not found"; exit 1; \
+		fi; \
+	fi
 	@echo "All checks passed for v$(VERSION)."
 
 ## release: Create release tag and push (with confirmation)

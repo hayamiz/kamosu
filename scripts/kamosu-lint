@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_NAME="kamosu-lint"
+
+# Options
+OPT_FIX=false
+
+usage() {
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [OPTIONS]
+
+Run health checks on the wiki and generate a lint report.
+
+Options:
+  --fix          Auto-fix issues where possible (index inconsistencies, etc.)
+  --check-only   Generate report only, no modifications (default)
+  -h, --help     Show this help message
+
+Examples:
+  docker compose run kb ${SCRIPT_NAME}
+  docker compose run kb ${SCRIPT_NAME} --fix
+EOF
+}
+
+error() {
+    echo "ERROR: $1" >&2
+    echo "Run '${SCRIPT_NAME} --help' for usage information." >&2
+    exit 1
+}
+
+info() {
+    echo "[${SCRIPT_NAME}] $1"
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fix)
+                OPT_FIX=true; shift ;;
+            --check-only)
+                OPT_FIX=false; shift ;;
+            -h|--help)
+                usage; exit 0 ;;
+            *)
+                error "Unknown option: $1" ;;
+        esac
+    done
+}
+
+check_prerequisites() {
+    if [[ ! -f "CLAUDE.md" ]]; then
+        error "CLAUDE.md not found. Are you in a kamosu data repository?"
+    fi
+    if [[ ! -d "wiki" ]]; then
+        error "wiki/ directory not found. Are you in a kamosu data repository?"
+    fi
+}
+
+main() {
+    parse_args "$@"
+    check_prerequisites
+
+    local today
+    today=$(date +%Y-%m-%d)
+    local report_file="outputs/lint-report-${today}.md"
+
+    mkdir -p outputs
+
+    local fix_instruction=""
+    if [[ "${OPT_FIX}" == true ]]; then
+        fix_instruction="
+After generating the report, auto-fix the following if found:
+- Index inconsistencies (_master_index.md article counts, missing category entries)
+- Missing backlinks in Related Articles sections
+- Stale entries in _cross_references.md for deleted articles
+Do NOT modify article content or delete any files."
+    fi
+
+    info "Running lint checks..."
+    if [[ "${OPT_FIX}" == true ]]; then
+        info "Auto-fix mode enabled."
+    fi
+
+    local prompt="Read /opt/kamosu/claude-base.md for the base protocol, then read CLAUDE.md for KB-specific instructions.
+
+Follow the Lint Protocol (Section 5 of claude-base.md) to perform all 5 checks:
+1. Orphaned articles detection (skip wiki/my-drafts/)
+2. Contradiction detection
+3. Source reference verification
+4. New connection suggestions
+5. Index consistency check
+
+Write the lint report to ${report_file} using the report format specified in the protocol.
+
+Append a lint entry to wiki/_log.md:
+## [${today}] lint | $(if [[ "${OPT_FIX}" == true ]]; then echo "fix"; else echo "check-only"; fi)
+${fix_instruction}"
+
+    local allowed_tools="Edit,Write,Read,Glob,Grep"
+    if [[ "${OPT_FIX}" == true ]]; then
+        claude -p "${prompt}" --allowedTools "${allowed_tools}"
+    else
+        claude -p "${prompt}" --allowedTools "Read,Glob,Grep,Write"
+    fi
+
+    info "Lint report saved to ${report_file}"
+
+    # Git commit if --fix was used and changes were made
+    if [[ "${OPT_FIX}" == true ]]; then
+        if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            if ! git diff --quiet wiki/ 2>/dev/null; then
+                info "Committing auto-fix changes..."
+                git add wiki/ "${report_file}"
+                git commit -m "lint: auto-fix — ${today}" || info "Nothing to commit."
+            fi
+        fi
+    fi
+
+    info "Lint complete."
+}
+
+main "$@"
