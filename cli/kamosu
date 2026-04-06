@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# kamosu — Host CLI for the kamosu knowledge base toolkit
+# Install: curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | sudo install /dev/stdin /usr/local/bin/kamosu
+
+KAMOSU_CLI_VERSION="0.1.0"
+KAMOSU_IMAGE="hayamiz/kamosu"
+
+# --- Helpers ---
+
+die() {
+  echo "kamosu: error: $*" >&2
+  exit 1
+}
+
+require_docker() {
+  command -v docker >/dev/null 2>&1 || die "Docker is not installed. See https://docs.docker.com/get-docker/"
+  docker info >/dev/null 2>&1 || die "Docker daemon is not running. Start Docker and try again."
+}
+
+require_data_repo() {
+  [[ -f .kb-toolkit-version ]] || die "Not a kamosu data repository (missing .kb-toolkit-version). Run this command from your KB directory."
+}
+
+image_tag() {
+  if [[ -f .kb-toolkit-version ]]; then
+    cat .kb-toolkit-version
+  else
+    echo "latest"
+  fi
+}
+
+full_image() {
+  echo "${KAMOSU_IMAGE}:$(image_tag)"
+}
+
+has_help_flag() {
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# --- Subcommand help texts ---
+
+help_init() {
+  cat <<'EOF'
+Usage: kamosu init [OPTIONS] <kb-name>
+
+Initialize a new knowledge base.
+
+Options:
+  --claude-oauth           Claude OAuth mode (mount host credentials)
+  --claude-bedrock         AWS Bedrock mode
+  --aws-profile <name>     AWS profile name (with --claude-bedrock)
+  --aws-region <region>    AWS region (required with --claude-bedrock)
+  -h, --help               Show this help message
+
+Examples:
+  kamosu init my-research-topic
+  kamosu init --claude-oauth my-topic
+  kamosu init --claude-bedrock --aws-region us-east-1 my-topic
+EOF
+}
+
+help_compile() {
+  cat <<'EOF'
+Usage: kamosu compile [OPTIONS]
+
+Compile raw data into wiki articles.
+
+Options:
+  --force            Recompile all raw files
+  --dry-run          Show target files only (no compilation)
+  --file <path>      Compile a specific file
+  -h, --help         Show this help message
+
+Examples:
+  kamosu compile
+  kamosu compile --dry-run
+  kamosu compile --file raw/papers/new-paper.pdf
+EOF
+}
+
+help_lint() {
+  cat <<'EOF'
+Usage: kamosu lint [OPTIONS]
+
+Run wiki health checks.
+
+Options:
+  --fix              Auto-fix issues where possible
+  --check-only       Report only (default)
+  -h, --help         Show this help message
+
+Examples:
+  kamosu lint
+  kamosu lint --fix
+EOF
+}
+
+help_search() {
+  cat <<'EOF'
+Usage: kamosu search <query> [OPTIONS]
+
+Search the wiki.
+
+Options:
+  --top <N>          Number of results (default: 5)
+  --rebuild-index    Force index rebuild
+  --json             JSON output (for LLM tool integration)
+  -h, --help         Show this help message
+
+Examples:
+  kamosu search "query execution"
+  kamosu search --top 10 "power management"
+EOF
+}
+
+help_shell() {
+  cat <<'EOF'
+Usage: kamosu shell [ARGS...]
+
+Open an interactive Claude Code session. All arguments are passed
+through to the claude command.
+
+Options:
+  -h, --help         Show this help message
+
+Examples:
+  kamosu shell
+  kamosu shell -p "Summarize recent papers"
+  kamosu shell --model claude-sonnet-4-20250514
+EOF
+}
+
+help_migrate() {
+  cat <<'EOF'
+Usage: kamosu migrate [OPTIONS]
+
+Run data repository migrations to match the current toolkit version.
+
+Options:
+  --dry-run          Show pending migrations without executing
+  --to <version>     Migrate to a specific version
+  --force            Run even with uncommitted changes
+  -h, --help         Show this help message
+
+Examples:
+  kamosu migrate
+  kamosu migrate --dry-run
+  kamosu migrate --to 0.3.0
+EOF
+}
+
+help_update() {
+  cat <<'EOF'
+Usage: kamosu update
+
+Pull the Docker image pinned in .kb-toolkit-version (or latest).
+
+Options:
+  -h, --help         Show this help message
+EOF
+}
+
+help_version() {
+  cat <<'EOF'
+Usage: kamosu version
+
+Show CLI version, data repo version pin, and Docker image info.
+
+Options:
+  -h, --help         Show this help message
+EOF
+}
+
+# --- Subcommands ---
+
+cmd_init() {
+  if has_help_flag "$@"; then help_init; return 0; fi
+  require_docker
+  local tag="latest"
+  docker run --rm -it -v "$(pwd)":/output "${KAMOSU_IMAGE}:${tag}" kamosu-init "$@"
+}
+
+cmd_compile() {
+  if has_help_flag "$@"; then help_compile; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-compile "$@"
+}
+
+cmd_lint() {
+  if has_help_flag "$@"; then help_lint; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-lint "$@"
+}
+
+cmd_search() {
+  if has_help_flag "$@"; then help_search; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-search "$@"
+}
+
+cmd_shell() {
+  if has_help_flag "$@"; then help_shell; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-shell "$@"
+}
+
+cmd_migrate() {
+  if has_help_flag "$@"; then help_migrate; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-migrate "$@"
+}
+
+cmd_update() {
+  if has_help_flag "$@"; then help_update; return 0; fi
+  require_docker
+  if [[ -f .kb-toolkit-version ]]; then
+    local tag
+    tag="$(image_tag)"
+    echo "Pulling ${KAMOSU_IMAGE}:${tag} ..."
+    docker pull "${KAMOSU_IMAGE}:${tag}"
+  else
+    echo "Pulling ${KAMOSU_IMAGE}:latest ..."
+    docker pull "${KAMOSU_IMAGE}:latest"
+  fi
+}
+
+cmd_version() {
+  if has_help_flag "$@"; then help_version; return 0; fi
+  echo "kamosu CLI ${KAMOSU_CLI_VERSION}"
+  if [[ -f .kb-toolkit-version ]]; then
+    echo "Data repo pinned to: $(cat .kb-toolkit-version)"
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    local tag
+    tag="$(image_tag)"
+    local image_id
+    image_id="$(docker images --format '{{.ID}}' "${KAMOSU_IMAGE}:${tag}" 2>/dev/null || true)"
+    if [[ -n "$image_id" ]]; then
+      echo "Docker image: ${KAMOSU_IMAGE}:${tag} (${image_id})"
+    else
+      echo "Docker image: ${KAMOSU_IMAGE}:${tag} (not pulled)"
+    fi
+  fi
+}
+
+cmd_help() {
+  cat <<'HELP'
+kamosu — LLM-powered knowledge base toolkit
+
+Usage:
+  kamosu <command> [options]
+
+Commands:
+  init <kb-name> [options]   Initialize a new knowledge base
+  compile [options]          Compile raw data into wiki articles
+  lint [options]             Run wiki health checks
+  search <query> [options]   Search the wiki
+  shell [args...]            Open an interactive Claude Code session
+  migrate [options]          Run data repository migrations
+  update                     Pull the latest Docker image
+  version                    Show version information
+  help                       Show this help message
+
+Run 'kamosu <command> --help' for details on a specific command.
+
+Installation:
+  curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | \
+    sudo install /dev/stdin /usr/local/bin/kamosu
+
+Examples:
+  kamosu init my-research-topic
+  kamosu compile
+  kamosu compile --dry-run
+  kamosu shell -p "Summarize recent papers"
+  kamosu lint --fix
+  kamosu update
+
+See https://github.com/hayamiz/kamosu for full documentation.
+HELP
+}
+
+# --- Dispatcher ---
+
+if [[ $# -eq 0 ]]; then
+  cmd_help
+  exit 0
+fi
+
+command="$1"
+shift
+
+case "$command" in
+  init)     cmd_init "$@" ;;
+  compile)  cmd_compile "$@" ;;
+  lint)     cmd_lint "$@" ;;
+  search)   cmd_search "$@" ;;
+  shell)    cmd_shell "$@" ;;
+  migrate)  cmd_migrate "$@" ;;
+  update)   cmd_update "$@" ;;
+  version)  cmd_version "$@" ;;
+  help|--help|-h) cmd_help ;;
+  *)        die "Unknown command: $command. Run 'kamosu help' for usage." ;;
+esac

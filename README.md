@@ -1,218 +1,198 @@
 # kamosu — LLM-Powered Knowledge Base Toolkit
 
-kamosu（醸す）は、LLM を活用して研究知識ベースを構築・運用するためのツールキットです。論文・Web記事・コードスニペット等の生データを Claude Code が Markdown wiki に「醸成（コンパイル）」し、Obsidian で閲覧・探索できる形にします。
+kamosu (醸す, "to brew/cultivate") is a Docker-based toolkit that uses LLMs to build and maintain research knowledge bases. Raw data (papers, web articles, code snippets, etc.) is "compiled" by Claude Code into a Markdown wiki, browsable in Obsidian.
 
-## 特徴
+## Features
 
-- **LLM がデータコンパイラ** — wiki 記事は LLM が生成・保守。人間は生データを投入するだけ
-- **ツールとデータの分離** — ツールキットは Docker イメージとして配布、データは各自の Git リポジトリで管理
-- **Obsidian ネイティブ** — `[[wikilink]]`・YAML frontmatter 対応、グラフビューやバックリンクがそのまま使える
-- **段階的スケーリング** — 小規模はフラットインデックス、成長に応じて階層インデックス → 検索ツールへ拡張
+- **LLM as data compiler** — Wiki articles are generated and maintained by the LLM. You just feed in raw data.
+- **Separation of tools and data** — The toolkit is distributed as a Docker image; your data lives in its own Git repository.
+- **Obsidian-native** — `[[wikilink]]` syntax, YAML frontmatter, graph view and backlinks work out of the box.
+- **Progressive scaling** — Flat index for small KBs, hierarchical index + search tools as it grows.
 
-## クイックスタート
-
-### 1. 知識ベースの初期化
+## Install
 
 ```bash
-# インタラクティブ（認証モードを対話的に選択）
-docker run --rm -it -v $(pwd):/output hayamiz/kamosu:latest kamosu-init my-topic
-
-# または非インタラクティブ（認証モードを引数で指定）
-docker run --rm -v $(pwd):/output hayamiz/kamosu:latest kamosu-init --claude-oauth my-topic
+curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | \
+  sudo install /dev/stdin /usr/local/bin/kamosu
 ```
 
-`kb-my-topic/` ディレクトリと `.env` が認証設定済みの状態で生成されます。
+Requires: Docker
 
-### 2. セットアップ
+## Quick Start
+
+### 1. Initialize a knowledge base
 
 ```bash
-cd kb-my-topic
+kamosu init my-research-topic
+```
 
-# CLAUDE.md を自分の研究テーマに合わせて編集
+This creates a `kb-my-research-topic/` directory with all scaffolding and authentication config.
+
+### 2. Setup
+
+```bash
+cd kb-my-research-topic
+
+# Edit CLAUDE.md for your research domain
 vim CLAUDE.md
 
-# Git の初期化
+# Git init
 git init
 git remote add origin <your-remote-url>
 git add -A && git commit -m "init: knowledge base"
 git push -u origin main
 ```
 
-### 3. データの投入とコンパイル
+### 3. Ingest data and compile
 
 ```bash
-# raw/ に生データを配置
+# Add raw data
 cp ~/Downloads/paper.pdf raw/papers/
 
-# コンパイル実行（Claude Code が wiki 記事を生成）
-docker compose run kb kamosu-compile
+# Compile (Claude Code generates wiki articles)
+kamosu compile
 ```
 
-### 4. 閲覧
+### 4. Browse
 
-Obsidian で `kb-my-topic/` フォルダを Vault として開きます。`wiki/` 以下の記事がグラフビュー付きで閲覧できます。
+Open `kb-my-research-topic/` as an Obsidian Vault. Articles in `wiki/` are viewable with graph view and backlinks.
 
-## 生成されるデータリポジトリの構造
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `kamosu init <kb-name>` | Initialize a new knowledge base |
+| `kamosu compile [options]` | Compile raw data into wiki articles |
+| `kamosu lint [options]` | Run wiki health checks |
+| `kamosu search <query>` | Search the wiki |
+| `kamosu shell [args...]` | Open an interactive Claude Code session |
+| `kamosu migrate [options]` | Run data repository migrations |
+| `kamosu update` | Pull the latest Docker image |
+| `kamosu version` | Show version information |
+| `kamosu help` | Show usage help |
+
+### kamosu init
+
+```bash
+kamosu init [OPTIONS] <kb-name>
+```
+
+| Option | Description |
+|--------|-------------|
+| `--claude-oauth` | Claude OAuth mode (mount host credentials) |
+| `--claude-bedrock` | AWS Bedrock mode |
+| `--aws-profile <name>` | AWS profile name (with `--claude-bedrock`) |
+| `--aws-region <region>` | AWS region (required with `--claude-bedrock`) |
+
+Without auth options, an interactive prompt is shown.
+
+### kamosu compile
+
+```bash
+kamosu compile [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Recompile all raw files |
+| `--dry-run` | Show target files only (no compilation) |
+| `--file <path>` | Compile a specific file |
+
+### kamosu lint
+
+```bash
+kamosu lint [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fix` | Auto-fix issues where possible |
+| `--check-only` | Report only (default) |
+
+## Authentication
+
+kamosu supports 3 authentication modes, selected during `kamosu init`:
+
+### Claude OAuth (default)
+
+Mounts the host machine's Claude Code credentials into the container.
+
+**Prerequisite**: Run `claude` on the host once to complete OAuth.
+
+```bash
+kamosu init --claude-oauth my-topic
+```
+
+### AWS Bedrock (profile)
+
+```bash
+kamosu init --claude-bedrock --aws-profile your-profile --aws-region us-east-1 my-topic
+```
+
+### AWS Bedrock (EC2 IAM Role)
+
+```bash
+kamosu init --claude-bedrock --aws-region us-east-1 my-topic
+```
+
+### Reconfigure authentication
+
+```bash
+kamosu shell -- kamosu-init --reconfigure
+```
+
+Existing `.env` is backed up before overwriting.
+
+## Data Repository Structure
 
 ```
 kb-my-topic/
-├── CLAUDE.md                 # KB 固有の LLM 指示（ユーザーが編集）
+├── CLAUDE.md                 # KB-specific LLM instructions (user-editable)
 ├── docker-compose.yml
-├── docker-compose.claude-auth.yml  # OAuth 認証用オーバーライド
+├── docker-compose.claude-auth.yml  # OAuth auth override
 ├── .env / .env.example
 ├── .gitignore
 ├── .kb-toolkit-version
-├── raw/                      # 生データ（ユーザーが投入）
+├── raw/                      # Raw data (user-managed)
 │   ├── papers/
 │   ├── web-clips/
 │   └── repos/
-├── wiki/                     # LLM が生成・保守（人間は編集しない）
+├── wiki/                     # LLM-generated articles (do not edit manually)
 │   ├── _master_index.md
 │   ├── _category/
 │   ├── _cross_references.md
-│   └── concepts/
-└── outputs/                  # Q&A 結果等
+│   ├── concepts/
+│   └── my-drafts/            # User drafts (LLM reads but does not edit)
+└── outputs/                  # Q&A results, reports, etc.
 ```
 
-## コマンドリファレンス
+## Development
 
-### kamosu-init
+For local development without the published Docker image:
 
-新規知識ベースを初期化します。認証モードの選択も行います。
-
-```bash
-kamosu-init [OPTIONS] <kb-name>        # 新規作成
-kamosu-init --reconfigure [OPTIONS]    # 認証の再設定
-```
-
-| オプション | 説明 |
-|-----------|------|
-| `--claude-oauth` | Claude OAuth モード（ホスト credential マウント） |
-| `--claude-bedrock` | AWS Bedrock モード |
-| `--aws-profile <name>` | AWS プロファイル名（`--claude-bedrock` と併用） |
-| `--aws-region <region>` | AWS リージョン（`--claude-bedrock` 時は必須） |
-| `--reconfigure` | 既存リポジトリの認証再設定 |
-
-認証オプション未指定時はインタラクティブプロンプトで選択できます。
-
-### kamosu-compile
-
-`raw/` の新規・更新ファイルを wiki にコンパイルします。
-
-```bash
-kamosu-compile [OPTIONS]
-```
-
-| オプション | 説明 |
-|-----------|------|
-| `--force` | 全 raw ファイルを再コンパイル |
-| `--dry-run` | 対象ファイル一覧の表示のみ（実行しない） |
-| `--file <path>` | 特定ファイルのみコンパイル |
-
-## 認証設定
-
-kamosu は 3 つの認証モードをサポートします。`kamosu-init` 実行時にインタラクティブに選択するか、引数で指定します。後から `kamosu-init --reconfigure` で変更可能です。
-
-### モード 1: Claude OAuth（デフォルト）
-
-ホストマシンの Claude Code 認証情報をコンテナに引き継ぎます。
-
-**前提条件**: ホストで `claude` コマンドを一度実行し、OAuth 認証を完了してください。
-
-```bash
-# 初期化時に選択
-kamosu-init --claude-oauth my-topic
-```
-
-**仕組み**:
-- ホストの `~/.claude/` を読み取り専用でコンテナにマウント
-- エントリポイントスクリプトがコンテナ内 `$HOME/.claude/` にコピー
-- コンテナ内の変更はホストに影響しない
-
-### モード 2: AWS Bedrock（credentials/profile）
-
-```bash
-kamosu-init --claude-bedrock --aws-profile your-profile --aws-region us-east-1 my-topic
-```
-
-### モード 3: AWS Bedrock（EC2 IAM Role）
-
-EC2 インスタンスの IAM Role を使用します。`--aws-profile` を省略します。
-
-```bash
-kamosu-init --claude-bedrock --aws-region us-east-1 my-topic
-```
-
-### 認証の変更
-
-```bash
-docker compose run kb kamosu-init --reconfigure
-```
-
-既存の `.env` はバックアップされ、新しい認証設定で上書きされます。
-
-## 開発（ローカルビルドで使う）
-
-Docker Hub にプッシュされたイメージを使わず、ローカルでビルドしたイメージで開発・テストする手順です。
-
-### 1. イメージのビルド
+### Build locally
 
 ```bash
 cd kamosu/
 docker build -t kamosu:local .
 ```
 
-### 2. 知識ベースの初期化
+### Test with local image
 
 ```bash
-docker run --rm -v $(pwd):/output kamosu:local kamosu-init my-topic
-cd kb-my-topic
+# Override the image in .env
+echo 'KB_TOOLKIT_VERSION=local' >> .env
+
+# Or edit docker-compose.yml directly:
+# image: kamosu:local
 ```
 
-### 3. docker-compose.yml をローカルイメージに切り替え
-
-生成された `docker-compose.yml` のイメージ名をローカルビルドに書き換えます:
-
-```yaml
-services:
-  kb:
-    image: kamosu:local   # ← ghcr.io/... から変更
-```
-
-または `.env` で上書き:
+### Run tests
 
 ```bash
-KB_TOOLKIT_VERSION=local
+make test
 ```
 
-※ デフォルトのテンプレートは `hayamiz/kamosu:${KB_TOOLKIT_VERSION:-latest}` なので、`KB_TOOLKIT_VERSION` を設定しない場合はレジストリから pull しようとします。
-
-### 4. 動作確認
-
-```bash
-cp .env.example .env
-# .env を編集して認証設定
-
-# コンテナに入る
-docker compose run kb bash
-
-# または直接コンパイル
-docker compose run kb kamosu-compile --dry-run
-```
-
-### テスト（ツールキット開発者向け）
-
-```bash
-# スキャフォールディングの検証
-docker run --rm -v $(pwd)/test-output:/output kamosu:local kamosu-init test-kb
-ls test-output/kb-test-kb/
-
-# エントリポイントの検証（OAuth credential のコピー）
-docker run --rm \
-  -v ~/.claude:/tmp/.claude-host:ro \
-  kamosu:local bash -c 'ls -la ~/.claude/'
-```
-
-## ライセンス
+## License
 
 TBD

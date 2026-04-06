@@ -38,7 +38,7 @@ kamosu-design.md の "Section 3.3 > kamosu-init" の仕様に従う。
 - Docker コンテナ内で実行され、/output/ にスキャフォールディングを生成
 - Git 初期化は行わない
 - テンプレートからファイルを生成
-- 実行例: `docker run --rm -v $(pwd):/output ghcr.io/goda-lab/kamosu:latest kamosu-init my-topic`
+- 実行例: `docker run --rm -v $(pwd):/output hayamiz/kamosu:latest kamosu-init my-topic`
 
 ### 5. kamosu-compile
 kamosu-design.md の "Section 3.3 > kamosu-compile" の仕様に従う。

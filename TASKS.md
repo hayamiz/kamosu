@@ -74,6 +74,23 @@
 - [x] バージョン互換性チェック（entrypoint.sh 起動時にデータ版とイメージ版を比較） — 2026-04-05
 - [x] release-check: Migration Required 記載時に migrate/X.Y.Z.sh が存在するかチェック — 2026-04-05
 
+## Phase 2.5: Host CLI
+
+- [x] `cli/kamosu` — Host-side CLI script (single-file shell script) — 2026-04-06
+  - [x] Subcommand dispatcher (`init`, `compile`, `lint`, `search`, `shell`, `migrate`, `update`, `version`, `help`)
+  - [x] `kamosu init`: `docker run --rm -it -v $(pwd):/output IMAGE kamosu-init ...`
+  - [x] `kamosu compile|lint|search|shell|migrate`: `docker compose run --rm kb kamosu-<cmd> ...`
+  - [x] `kamosu update`: pull Docker image pinned in `.kb-toolkit-version`
+  - [x] `kamosu version`: show CLI version + Docker image version
+  - [x] `kamosu help` and `--help` for each subcommand
+  - [x] Docker availability check with clear error message
+  - [x] Image tag resolution from `.kb-toolkit-version` (or `latest` for init)
+- [x] Installation script / instructions (curl one-liner) — 2026-04-06
+- [x] Tests for host CLI — 2026-04-06
+  - [x] Subcommand routing (each subcommand calls the correct docker command)
+  - [x] Error handling (Docker not installed, not in a data repo, etc.)
+- [x] Update README.md with new installation and usage instructions — 2026-04-06
+
 ## Phase 3: Lab Deployment
 
 - [ ] セマンティック検索（sentence-transformers）
