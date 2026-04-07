@@ -137,6 +137,25 @@ Examples:
 EOF
 }
 
+help_promote() {
+  cat <<'EOF'
+Usage: kamosu promote [OPTIONS] [FILE...]
+
+Promote Q&A outputs into wiki articles.
+
+Options:
+  --dry-run          Show integration plan without making changes
+  --list             Show unpromoted files in outputs/
+  --file <path>      Promote a file outside outputs/ (repeatable)
+  -h, --help         Show this help message
+
+Examples:
+  kamosu promote outputs/analysis-2026-04-06.md
+  kamosu promote --dry-run outputs/analysis.md
+  kamosu promote --list
+EOF
+}
+
 help_migrate() {
   cat <<'EOF'
 Usage: kamosu migrate [OPTIONS]
@@ -215,6 +234,13 @@ cmd_shell() {
   docker compose run --rm kb kamosu-shell "$@"
 }
 
+cmd_promote() {
+  if has_help_flag "$@"; then help_promote; return 0; fi
+  require_docker
+  require_data_repo
+  docker compose run --rm kb kamosu-promote "$@"
+}
+
 cmd_migrate() {
   if has_help_flag "$@"; then help_migrate; return 0; fi
   require_docker
@@ -268,6 +294,7 @@ Commands:
   lint [options]             Run wiki health checks
   search <query> [options]   Search the wiki
   shell [args...]            Open an interactive Claude Code session
+  promote [file...] [opts]   Promote Q&A outputs into wiki articles
   migrate [options]          Run data repository migrations
   update                     Pull the latest Docker image
   version                    Show version information
@@ -307,6 +334,7 @@ case "$command" in
   lint)     cmd_lint "$@" ;;
   search)   cmd_search "$@" ;;
   shell)    cmd_shell "$@" ;;
+  promote)  cmd_promote "$@" ;;
   migrate)  cmd_migrate "$@" ;;
   update)   cmd_update "$@" ;;
   version)  cmd_version "$@" ;;

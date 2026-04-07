@@ -61,9 +61,24 @@
 
 - [x] kamosu-lint（健全性チェック + レポート生成） — 2026-04-05
 - [x] kamosu-search（TF-IDF ベース全文検索 CLI + Python 検索エンジン） — 2026-04-05
-  - [ ] qmd（tobi/qmd）との比較評価: 将来的に qmd 推奨/統合を検討（DEVLOG 参照）
-- [ ] 信頼度タグ: frontmatter に `confidence: high|medium|low` 追加 — 将来検討項目（DEVLOG 参照）
-- [ ] Query 結果の wiki ファイリングプロトコル — 将来検討項目（DEVLOG 参照）
+- [x] kamosu-promote (Q&A results → wiki filing) — 2026-04-06
+  - [x] Promote Protocol in claude-base.md (reuses Compilation Protocol Steps 4-6)
+  - [x] `scripts/kamosu-promote` shell script
+    - [x] Read specified outputs/ files
+    - [x] Call Claude Code with Promote Protocol
+    - [x] Update indexes (_master_index, _category, _cross_references)
+    - [x] Append promote entry to _log.md
+    - [x] Record promoted files in `.promote-history`
+    - [x] git commit
+  - [x] `--dry-run`: show integration plan without changes
+  - [x] `--list`: show unpromoted outputs/ files
+  - [x] `--file <path>`: promote a file outside outputs/
+  - [x] Add `promote` subcommand to host CLI (`cli/kamosu`)
+  - [x] Tests for kamosu-promote
+    - [x] --dry-run does not modify wiki
+    - [x] --list filters out already-promoted files
+    - [x] .promote-history tracking
+    - [x] Error on non-existent file
 - [x] kamosu-migrate（バージョン間マイグレーション） — 2026-04-05
   - [x] migrate/ ディレクトリ構造とスクリプト規約
   - [x] チェーン適用ロジック（現在バージョン → ターゲットまで昇順実行）
@@ -108,6 +123,9 @@
 - [ ] 画像ハンドリング（raw/assets/ へのローカル保存）
 - [ ] マルチエージェント並列リサーチ（Deep query モード）
 - [ ] Dataview 互換 frontmatter（Obsidian Dataview プラグイン対応）
+- [ ] qmd (tobi/qmd) との比較評価: kamosu-search の将来的な代替/統合を検討
+- [ ] 信頼度タグ: frontmatter に `confidence: high|medium|low` 追加
+- [ ] LLM-suggested promote: Query 終了時に LLM が promote を提案 → ユーザー承認フロー（Pattern B）
 
 ## Backlog
 

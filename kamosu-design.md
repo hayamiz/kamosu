@@ -143,6 +143,13 @@ kb-energy-db/
 5. 関連記事からのバックリンクを追加する
 6. `_master_index.md`、影響を受けた `_category/*.md`、`_cross_references.md` を更新する
 
+**Promote Protocol**
+1. `outputs/` 内の指定ファイルを読み、内容を理解する
+2. 既存 wiki を参照し、統合先を判断（既存記事への統合 or 新規記事作成）
+3. Compilation Protocol の Step 4-6 と同じ手順で記事を作成・更新する
+4. `sources:` に元の outputs ファイルパスを記録する
+5. `_log.md` に promote エントリを追記する
+
 **Query Protocol**
 1. `_master_index.md` を読む（カテゴリレベルの概観）
 2. 関連カテゴリの `_category/*.md` を読む（記事レベルの要約）
@@ -288,6 +295,44 @@ wiki の健全性チェックを実行する。
 - `--fix`: 自動修正可能な問題を修正
 - `--check-only`: レポート生成のみ（デフォルト）
 
+##### kamosu-promote
+
+Q&A の結果（`outputs/` 内のファイル）を wiki 記事として統合する。Query で得られた知見を wiki に蓄積し、知識を複利的に成長させるための仕組み。
+
+**Design Rationale**:
+- Q&A の回答には、複数記事を横断した比較分析や新たな接続の発見が含まれることがある
+- これらは chat history に埋もれるべきではなく、wiki に還元すべき（ref: Karpathy LLM Wiki）
+- Human-gated: ユーザーが「良い回答」を明示的に選んで promote する。自動ファイリングは wiki 品質を損なうリスクがあるため採用しない
+
+**使い方**:
+```bash
+kamosu promote outputs/analysis-2026-04-06.md       # 特定ファイルを promote
+kamosu promote outputs/comparison-*.md               # glob 指定
+kamosu promote --dry-run outputs/analysis.md         # 統合プランの表示のみ
+kamosu promote --list                                 # promote 候補の一覧
+```
+
+**処理フロー**:
+1. 指定された `outputs/` 内のファイルを読み取る
+2. Claude Code を呼び出し、Promote Protocol（claude-base.md）に従って処理:
+   a. ソースファイルの内容を理解する
+   b. 既存 wiki を参照し、統合先を判断（既存記事への統合 or 新規記事作成）
+   c. 記事を作成・更新する（Compilation Protocol の Step 4-6 と同じ手順）
+   d. frontmatter の `sources:` に元の outputs ファイルパスを記録する
+3. インデックスを更新する
+4. `_log.md` に promote エントリを追記する
+5. 変更を git commit
+
+**オプション**:
+- `--dry-run`: 統合プランの表示のみ（実際の変更なし）
+- `--list`: `outputs/` 内のまだ promote されていないファイル一覧を表示
+- `--file <path>`: 対象ファイルの指定（`outputs/` 外のファイルも指定可能）
+
+**promote 済み追跡**:
+- promote 実行時、対象ファイルのパスを `.promote-history` に記録する（1行1パス、タイムスタンプ付き）
+- `--list` は `.promote-history` に記録されていない `outputs/*.md` を表示する
+- 元ファイルは削除しない（ユーザーが判断する）
+
 ##### kamosu-search
 
 wiki の全文検索 CLI。LLM が Q&A 時にツールとして使用することも想定。
@@ -356,6 +401,7 @@ curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | 
 | `kamosu lint [options]` | `docker compose run --rm kb kamosu-lint [options]` | Run wiki health checks |
 | `kamosu search <query> [options]` | `docker compose run --rm kb kamosu-search <query> [options]` | Search the wiki |
 | `kamosu shell [args...]` | `docker compose run --rm kb kamosu-shell [args...]` | Open an interactive Claude Code session |
+| `kamosu promote <file> [options]` | `docker compose run --rm kb kamosu-promote <file> [options]` | Promote Q&A outputs into wiki articles |
 | `kamosu migrate [options]` | `docker compose run --rm kb kamosu-migrate [options]` | Run data repository migrations |
 | `kamosu update` | `docker compose pull` / `docker pull IMAGE` | Pull the latest Docker image |
 | `kamosu version` | — | Show CLI version and Docker image version |
@@ -586,7 +632,20 @@ kamosu shell -p "Summarize the relationship between NVMe idle power and
                  query scheduling based on the wiki. Save to outputs/."
 ```
 
-#### 6.4 Lint
+#### 6.4 Promote Q&A Results to Wiki
+
+```bash
+# List outputs not yet promoted
+kamosu promote --list
+
+# Preview what would be integrated
+kamosu promote --dry-run outputs/nvme-scheduling-analysis.md
+
+# Promote into the wiki
+kamosu promote outputs/nvme-scheduling-analysis.md
+```
+
+#### 6.5 Lint
 
 ```bash
 kamosu lint
@@ -595,7 +654,7 @@ kamosu lint
 kamosu lint --fix
 ```
 
-#### 6.5 Toolkit Update
+#### 6.6 Toolkit Update
 
 ```bash
 # Pull the latest Docker image
@@ -605,7 +664,7 @@ kamosu update
 kamosu migrate
 ```
 
-#### 6.6 Multi-Device Sync (with Obsidian)
+#### 6.7 Multi-Device Sync (with Obsidian)
 
 - Obsidian Git プラグインで auto-pull / auto-push を設定（推奨間隔: 5分）
 - wiki/ は LLM の領域なので、Obsidian 側は pull 優先（force pull）
@@ -683,7 +742,7 @@ kamosu migrate
 Dockerfile、claude-base.md、kamosu-init、kamosu-compile、テンプレート群。最小限の動作可能なツールキットを構築する。
 
 #### Phase 2: Quality & Search
-kamosu-lint、kamosu-search（TF-IDF）、kamosu-migrate、GitHub Actions CI/CD。wiki の品質管理と検索機能を追加する。
+kamosu-lint、kamosu-search（TF-IDF）、kamosu-migrate、kamosu-promote。wiki の品質管理、検索、知識蓄積機能を追加する。
 
 #### Phase 2.5: Host CLI
 Host-side `kamosu` CLI command. A single shell script installable via `curl`, wrapping all Docker invocations behind subcommands (`kamosu init`, `kamosu compile`, etc.). Eliminates the need for users to remember Docker commands. See Section 3.4.
@@ -692,5 +751,5 @@ Host-side `kamosu` CLI command. A single shell script installable via `curl`, wr
 セマンティック検索、Web UI、Bedrock コスト管理用 IAM ポリシーテンプレート、運用ドキュメント。研究室メンバーが自律的に使える状態にする。
 
 #### Future (未定)
-- Query 結果の wiki 還元 — Q&A の回答を wiki ページとして保存し、知識を蓄積する仕組み（ref: Karpathy LLM Wiki の "good answers can be filed back into the wiki"）
+- LLM-suggested promote — Query 終了時に LLM が「この回答は wiki に統合すべき」と提案し、ユーザーが承認するフロー（Pattern B）。kamosu-promote の上位互換として検討
 - 画像ハンドリング — raw/assets/ への画像ローカル保存と LLM からの参照（ref: Karpathy LLM Wiki の画像ダウンロード手法）
