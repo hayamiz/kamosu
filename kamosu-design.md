@@ -89,10 +89,10 @@ kamosu/
 └── tests/                      # ツール自体のテスト
 ```
 
-**Data Repository (per user/project, e.g. `kb-energy-db`)**
+**Data Repository (per user/project, e.g. `energy-db`)**
 
 ```
-kb-energy-db/
+energy-db/
 ├── .kb-toolkit-version         # 使用する kamosu バージョンのピン留め
 ├── CLAUDE.md                   # claude-base.md を継承 + KB 固有の指示
 ├── docker-compose.yml          # kamosu イメージ参照（薄い）
@@ -429,6 +429,7 @@ curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | 
 - claude-base.md: `/opt/kamosu/claude-base.md` に配置
 - テンプレート: `/opt/kamosu/templates/` に配置
 - 環境変数: `KB_TOOLKIT_VERSION` を VERSION ファイルから設定
+- UID/GID マッピング: `gosu` をインストール。`HOST_UID`/`HOST_GID` 環境変数が渡された場合、entrypoint でホストユーザーと同じ UID/GID の実行ユーザーを作成し、`gosu` で権限を降格してからコマンドを実行する。これにより、バインドマウント上に作成されるファイルがホストユーザーの所有になる
 
 #### 4.2 Image Distribution
 
@@ -446,6 +447,9 @@ services:
       - .:/workspace
     env_file:
       - .env
+    environment:
+      - HOST_UID=${HOST_UID:-0}
+      - HOST_GID=${HOST_GID:-0}
     working_dir: /workspace
     stdin_open: true
     tty: true
@@ -592,7 +596,7 @@ curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | 
 kamosu init my-research-topic
 
 # 2. Git init & remote setup
-cd kb-my-research-topic
+cd my-research-topic
 git init
 git remote add origin <user's git remote URL>
 

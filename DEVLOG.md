@@ -11,6 +11,23 @@
 
 ---
 
+## 2026-04-07 | decision | Remove kb- prefix from generated directory names
+
+`kamosu init my-topic` previously created `kb-my-topic/`. The `kb-` prefix was redundant — the user already chose the name intentionally. Now the directory name matches the input exactly: `kamosu init my-topic` → `my-topic/`.
+
+## 2026-04-07 | decision | Fix root-owned files on host via gosu + HOST_UID/HOST_GID
+
+When running `kamosu init` or any compose-based command, files created on host bind mounts were owned by root because the container ran as root (no `USER` directive in Dockerfile).
+
+**Approach chosen**: Install `gosu` in the image. The host CLI exports `HOST_UID`/`HOST_GID` env vars. The entrypoint creates a runtime user with matching UID/GID and uses `gosu` to drop privileges before executing the command. This is the standard Docker pattern (used by official postgres, redis, mysql images).
+
+**Alternatives considered**:
+- `--user` flag: Would break entrypoint credential setup (needs root to copy files into the new user's home)
+- Post-creation `chown`: Fragile — every future script would need to remember to fix ownership
+- `fixuid`: Extra binary dependency for a problem that `gosu` + `useradd` solves natively
+
+**Backward compatible**: If `HOST_UID`/`HOST_GID` are unset or zero, the container runs as root (existing behavior).
+
 ## 2026-04-05 | idea | kamosu-ingest: Jina Reader による CLI データ投入
 
 [Jina Reader](https://jina.ai/reader/) (`r.jina.ai`) を使い、URL を指定して `raw/web-clips/` に Markdown として保存するコマンド。Obsidian Web Clipper の補完として、ブラウザを開かずに CLI だけで Web データを投入できる。

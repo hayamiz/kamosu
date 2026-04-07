@@ -68,5 +68,5 @@ kamosu-design.md の "Section 3.3 > kamosu-compile" の仕様に従う。
 構築完了後、以下を確認できるようにすること:
 1. `docker build -t kamosu:test .` が成功する
 2. `docker run --rm -v $(pwd)/test-output:/output kamosu:test kamosu-init test-kb` でスキャフォールディングが正しく生成される
-3. 生成された test-output/kb-test-kb/ のディレクトリ構造が kamosu-design.md と一致する
+3. 生成された test-output/test-kb/ のディレクトリ構造が kamosu-design.md と一致する
 ```

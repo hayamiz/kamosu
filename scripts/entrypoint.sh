@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly HOST_UID="${HOST_UID:-0}"
+readonly HOST_GID="${HOST_GID:-0}"
+
+# Create non-root user matching host UID/GID to avoid root-owned files on bind mounts
+if [[ "${HOST_UID}" -ne 0 ]]; then
+    groupadd -o -g "${HOST_GID}" kamosu 2>/dev/null || true
+    useradd -o -u "${HOST_UID}" -g "${HOST_GID}" -m -d /home/kamosu -s /bin/bash kamosu 2>/dev/null || true
+    export HOME=/home/kamosu
+fi
+
 readonly CLAUDE_HOST_DIR="/tmp/.claude-host"
 readonly CLAUDE_TARGET_DIR="${HOME}/.claude"
 
@@ -31,4 +41,12 @@ if [[ -f "/workspace/.kb-toolkit-version" ]]; then
     fi
 fi
 
-exec "$@"
+# Drop privileges if non-root user was requested
+if [[ "${HOST_UID}" -ne 0 ]]; then
+    # Fix ownership of credential files so the non-root user can read them
+    chown -R "${HOST_UID}:${HOST_GID}" "${HOME}/.claude" 2>/dev/null || true
+    chown "${HOST_UID}:${HOST_GID}" "${HOME}/.claude.json" 2>/dev/null || true
+    exec gosu kamosu "$@"
+else
+    exec "$@"
+fi

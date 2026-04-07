@@ -7,7 +7,7 @@ setup
 trap teardown EXIT
 
 KB_NAME="test-init"
-KB_DIR="${TEST_OUTPUT_BASE}/kb-${KB_NAME}"
+KB_DIR="${TEST_OUTPUT_BASE}/${KB_NAME}"
 
 echo "  [1/4] Directory structure..."
 kamosu_run kamosu-init --claude-oauth "${KB_NAME}" > /dev/null

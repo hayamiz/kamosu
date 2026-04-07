@@ -7,7 +7,7 @@ setup
 trap teardown EXIT
 
 KB_NAME="test-compile"
-KB_DIR="${TEST_OUTPUT_BASE}/kb-${KB_NAME}"
+KB_DIR="${TEST_OUTPUT_BASE}/${KB_NAME}"
 
 # Initialize a KB for testing
 kamosu_run kamosu-init --claude-oauth "${KB_NAME}" > /dev/null

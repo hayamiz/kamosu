@@ -26,12 +26,12 @@ Requires: Docker
 kamosu init my-research-topic
 ```
 
-This creates a `kb-my-research-topic/` directory with all scaffolding and authentication config.
+This creates a `my-research-topic/` directory with all scaffolding and authentication config.
 
 ### 2. Setup
 
 ```bash
-cd kb-my-research-topic
+cd my-research-topic
 
 # Edit CLAUDE.md for your research domain
 vim CLAUDE.md
@@ -55,7 +55,7 @@ kamosu compile
 
 ### 4. Browse
 
-Open `kb-my-research-topic/` as an Obsidian Vault. Articles in `wiki/` are viewable with graph view and backlinks.
+Open `my-research-topic/` as an Obsidian Vault. Articles in `wiki/` are viewable with graph view and backlinks.
 
 ## Commands
 
@@ -146,7 +146,7 @@ Existing `.env` is backed up before overwriting.
 ## Data Repository Structure
 
 ```
-kb-my-topic/
+my-topic/
 ├── CLAUDE.md                 # KB-specific LLM instructions (user-editable)
 ├── docker-compose.yml
 ├── docker-compose.claude-auth.yml  # OAuth auth override

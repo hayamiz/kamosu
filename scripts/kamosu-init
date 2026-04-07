@@ -220,7 +220,7 @@ scaffold() {
         version=$(cat "${VERSION_FILE}" | tr -d '[:space:]')
     fi
 
-    info "Creating knowledge base 'kb-${KB_NAME}'..."
+    info "Creating knowledge base '${KB_NAME}'..."
 
     # 1. Create directory structure
     info "Creating directory structure..."
@@ -282,7 +282,7 @@ print_completion_message() {
     info "Done! Knowledge base created at: ${kb_dir}"
     info ""
     info "Next steps:"
-    info "  1. cd kb-${KB_NAME}"
+    info "  1. cd ${KB_NAME}"
     info "  2. Edit CLAUDE.md to configure your research domain"
     info "  3. git init && git remote add origin <your-remote-url>"
 
@@ -342,7 +342,7 @@ main() {
 
     validate_name "${KB_NAME}"
 
-    local kb_dir="${OUTPUT_BASE}/kb-${KB_NAME}"
+    local kb_dir="${OUTPUT_BASE}/${KB_NAME}"
 
     if [[ -d "${kb_dir}" ]]; then
         error "Directory '${kb_dir}' already exists. Remove it first or choose a different name."

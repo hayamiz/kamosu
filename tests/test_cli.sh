@@ -122,7 +122,7 @@ echo "--- Test: init routes to docker run ---"
 # ============================================================
 cd "${WORK_DIR}"
 run_cli init my-kb
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker run --rm -it -v" "init calls docker run"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker run --rm -it -e HOST_UID -e HOST_GID -v" "init calls docker run with HOST_UID/HOST_GID"
 assert_file_contains "${KAMOSU_MOCK_LOG}" "kamosu-init my-kb" "init passes kb-name"
 assert_file_contains "${KAMOSU_MOCK_LOG}" "hayamiz/kamosu:latest" "init uses latest tag"
 

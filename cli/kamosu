@@ -7,6 +7,10 @@ set -euo pipefail
 KAMOSU_CLI_VERSION="0.1.0"
 KAMOSU_IMAGE="hayamiz/kamosu"
 
+# Export host UID/GID so containers can create files with matching ownership
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
+
 # --- Helpers ---
 
 die() {
@@ -203,7 +207,7 @@ cmd_init() {
   if has_help_flag "$@"; then help_init; return 0; fi
   require_docker
   local tag="latest"
-  docker run --rm -it -v "$(pwd)":/output "${KAMOSU_IMAGE}:${tag}" kamosu-init "$@"
+  docker run --rm -it -e HOST_UID -e HOST_GID -v "$(pwd)":/output "${KAMOSU_IMAGE}:${tag}" kamosu-init "$@"
 }
 
 cmd_compile() {
