@@ -23,6 +23,24 @@ require_docker() {
   docker info >/dev/null 2>&1 || die "Docker daemon is not running. Start Docker and try again."
 }
 
+# Detect the available compose command: "docker compose" (V2) or "docker-compose" (V1)
+COMPOSE_CMD=""
+detect_compose_cmd() {
+  if [[ -n "$COMPOSE_CMD" ]]; then return; fi
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD="docker-compose"
+  else
+    die "Docker Compose is not installed. Install the Docker Compose plugin or standalone docker-compose."
+  fi
+}
+
+compose_run() {
+  detect_compose_cmd
+  $COMPOSE_CMD run --rm "$@"
+}
+
 require_data_repo() {
   [[ -f .kb-toolkit-version ]] || die "Not a kamosu data repository (missing .kb-toolkit-version). Run this command from your KB directory."
 }
@@ -214,42 +232,42 @@ cmd_compile() {
   if has_help_flag "$@"; then help_compile; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-compile "$@"
+  compose_run kb kamosu-compile "$@"
 }
 
 cmd_lint() {
   if has_help_flag "$@"; then help_lint; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-lint "$@"
+  compose_run kb kamosu-lint "$@"
 }
 
 cmd_search() {
   if has_help_flag "$@"; then help_search; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-search "$@"
+  compose_run kb kamosu-search "$@"
 }
 
 cmd_shell() {
   if has_help_flag "$@"; then help_shell; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-shell "$@"
+  compose_run kb kamosu-shell "$@"
 }
 
 cmd_promote() {
   if has_help_flag "$@"; then help_promote; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-promote "$@"
+  compose_run kb kamosu-promote "$@"
 }
 
 cmd_migrate() {
   if has_help_flag "$@"; then help_migrate; return 0; fi
   require_docker
   require_data_repo
-  docker compose run --rm kb kamosu-migrate "$@"
+  compose_run kb kamosu-migrate "$@"
 }
 
 cmd_update() {
