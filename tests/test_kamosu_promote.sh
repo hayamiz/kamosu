@@ -164,7 +164,7 @@ assert_file_contains "${WORK_DIR}/repo/.promote-history" "outputs/full-test.md" 
 # ============================================================
 echo "--- Test: promote invokes Claude via Docker ---"
 # ============================================================
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "promote invokes claude via docker"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb bash" "promote invokes claude via docker (stream pipeline)"
 
 # ============================================================
 echo "--- Test: promote runs git commit on host ---"

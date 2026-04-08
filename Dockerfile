@@ -45,6 +45,9 @@ COPY prompts/ /opt/kamosu/prompts/
 # Copy templates
 COPY templates/ /opt/kamosu/templates/
 
+# Copy tools (stream monitor)
+COPY tools/stream-monitor.py /opt/kamosu/tools/stream-monitor.py
+
 # Copy scripts (only kamosu-init and entrypoint.sh are used in-container)
 COPY scripts/kamosu-init /opt/kamosu/scripts/kamosu-init
 COPY scripts/entrypoint.sh /opt/kamosu/scripts/entrypoint.sh

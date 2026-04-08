@@ -144,7 +144,7 @@ echo "test content" > "${WORK_DIR}/repo/raw/papers/queued-file.txt"
 echo "raw/papers/queued-file.txt" > "${WORK_DIR}/repo/.ingest-queue"
 cd "${WORK_DIR}/repo"
 run_cli compile --resume
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "--resume invokes claude"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb bash" "--resume invokes claude (stream pipeline)"
 # Queue should be cleaned up after successful compile
 ASSERTIONS=$((ASSERTIONS + 1))
 if [[ ! -f "${WORK_DIR}/repo/.ingest-queue" ]]; then

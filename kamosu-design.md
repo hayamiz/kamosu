@@ -226,9 +226,51 @@ LLM に渡すプロンプトはDocker イメージ内の `/opt/kamosu/prompts/` 
 
 **Design Rationale**: プロンプトを Docker イメージに配置することで、プロンプトの更新と CLI の更新を分離する。CLIはプロンプトの内容を知る必要がなく、イメージバージョンの更新だけでプロンプト改善が反映される。
 
-#### 3.5 Host CLI Commands
+#### 3.5 Stream Monitor (`tools/stream-monitor.py`)
 
-以下は `cli/kamosu` で実装されるサブコマンドの仕様。各コマンドのオーケストレーション（Git、ファイル操作）はホスト側で実行し、LLM 呼び出しのみ Docker に委譲する。
+Claude Code の `--output-format stream-json --verbose` 出力をリアルタイムで処理し、進捗表示・ログ保存・結果検証を行う Python スクリプト。Docker イメージ内に配置し、`claude` コマンドの出力をパイプで受け取る。
+
+**パイプライン**:
+
+```
+compose_run kb bash -c 'set -o pipefail; \
+  claude -p "$(cat /workspace/.kamosu-prompt-tmp)" \
+    --output-format stream-json --verbose --allowedTools "..." \
+  | python3 /opt/kamosu/tools/stream-monitor.py \
+    --log /workspace/.kamosu/logs/stream-XXXXXX.jsonl'
+```
+
+プロンプトは一時ファイル (`/workspace/.kamosu-prompt-tmp`) に書き出して `cat` で読み取る。`bash -c` 内でのエスケープ問題を回避するため。`set -o pipefail` により `claude` 側の失敗がパイプライン全体に伝播する。
+
+**機能**:
+
+| 出力先 | 内容 |
+|--------|------|
+| stderr | スピナー + フェーズ表示（TTY 時のみ） |
+| ファイル | `.kamosu/logs/stream-*.jsonl`（生の JSONL 全イベント） |
+| stdout | 人間可読なサマリー（成功時: 記事数・コスト・所要時間、失敗時: 原因・ログパス） |
+| exit code | 0（成功）or 1（失敗） |
+
+**フェーズ表示**: ファイル単位ではなく、ツール使用パターンからフェーズを推定して表示する。
+
+```
+⠋ Reading source files...       (Read on raw/ or PDF)
+⠙ Analyzing existing wiki...    (Read/Grep/Glob on wiki/)
+⠹ Writing articles...           (Write/Edit on wiki/concepts/)
+⠸ Updating indexes...           (Edit on _master_index.md 等)
+⠼ Thinking...                   (text のみ、tool_use なし)
+⠴ Rate limited, retrying...     (rate_limit_event)
+✓ Done (45s, $0.34)             (result: success)
+✗ Failed: budget exceeded        (result: error)
+```
+
+**結果検証**: `result` イベントの `subtype`, `is_error`, `permission_denials` を検査。成功条件: `subtype == "success"` かつ `is_error == false` かつ `permission_denials` が空。
+
+**テスト**: `--json-summary` フラグでサマリーを JSON 出力し、`jq` で正確なアサーション。フィクスチャファイル（`tests/fixtures/stream-*.jsonl`）を使用し、実際の Claude 呼び出しなしでテスト。
+
+#### 3.6 Host CLI Commands
+
+以下は `cli/kamosu` で実装されるサブコマンドの仕様。各コマンドのオーケストレーション（Git、ファイル操作）はホスト側で実行し、LLM 呼び出しのみ Docker に委譲する（stream-monitor.py 経由でストリーミング処理）。
 
 ##### kamosu init
 
@@ -404,7 +446,7 @@ kamosu migrate --force         # ダーティ状態でも強制実行
 - 先頭コメントに何をするか・なぜ必要かを記述
 - マイグレーション不要なバージョンにはスクリプトを作らない
 
-#### 3.6 Host CLI (`kamosu` command)
+#### 3.7 Host CLI (`kamosu` command)
 
 The main orchestration script that runs on the host machine. All git operations, file detection, queue management, and timestamp handling run natively on the host. Docker is invoked only for Claude Code and Python execution.
 

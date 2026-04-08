@@ -89,11 +89,35 @@ read_prompt() {
   docker run --rm --entrypoint cat "$(full_image)" "/opt/kamosu/prompts/${prompt_name}"
 }
 
-# Run claude inside Docker with a prompt and allowed tools
+# Run claude inside Docker with streaming progress monitor.
+# Writes prompt to temp file to avoid quoting issues in bash -c.
+# Returns 0 on success, 1 on failure.
 docker_claude() {
   local prompt="$1"
   local allowed_tools="$2"
-  compose_run kb claude -p "${prompt}" --allowedTools "${allowed_tools}"
+  local log_dir=".kamosu/logs"
+  local log_file="${log_dir}/stream-$(date +%Y%m%d-%H%M%S).jsonl"
+  local prompt_tmp=".kamosu-prompt-tmp"
+
+  mkdir -p "${log_dir}"
+
+  # Write prompt to temp file (avoids escaping issues in bash -c)
+  echo "${prompt}" > "${prompt_tmp}"
+
+  local exit_code=0
+  compose_run kb bash -c "
+    set -o pipefail
+    claude -p \"\$(cat /workspace/${prompt_tmp})\" \
+      --output-format stream-json --verbose \
+      --allowedTools \"${allowed_tools}\" \
+    | python3 /opt/kamosu/tools/stream-monitor.py \
+      --log /workspace/${log_file}
+  " || exit_code=$?
+
+  # Clean up temp file
+  rm -f "${prompt_tmp}"
+
+  return "${exit_code}"
 }
 
 # ===================================================================

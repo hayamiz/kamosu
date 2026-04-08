@@ -226,7 +226,7 @@ echo "--- Test: compile invokes Claude via Docker ---"
 echo "test content" > "${WORK_DIR}/raw/test-paper.txt"
 cd "${WORK_DIR}"
 run_cli compile
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "compile invokes claude via docker compose"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb bash" "compile invokes claude via docker compose (stream pipeline)"
 assert_file_contains "${KAMOSU_MOCK_LOG}" "git pull" "compile runs git pull on host"
 assert_file_contains "${KAMOSU_MOCK_LOG}" "git add" "compile runs git add on host"
 rm -f "${WORK_DIR}/raw/test-paper.txt" "${WORK_DIR}/.ingest-queue" "${WORK_DIR}/.last-compile-timestamp"
@@ -243,7 +243,7 @@ echo "--- Test: lint invokes Claude via Docker ---"
 # ============================================================
 cd "${WORK_DIR}"
 run_cli lint
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "lint invokes claude via docker compose"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb bash" "lint invokes claude via docker compose (stream pipeline)"
 
 # ============================================================
 echo "--- Test: lint --help ---"
