@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-04-08 | gotcha | Claude OAuth: ~/.claude.json must also be mounted
+
+Claude Code CLI は `~/.claude/.credentials.json` だけでなく `~/.claude.json` も必要。`~/.claude.json` にはオンボーディングフラグのほか、statsig gates、GrowthBook features、dynamic configs など CLI の動作に必要なキャッシュ情報が大量に含まれる。
+
+**旧実装**: `~/.claude/` のみマウントし、`~/.claude.json` は `{"completedOnboarding":true}` だけで自動生成 → Claude CLI が正常に認証できない場合があった。
+
+**修正**: `docker-compose.claude-auth.yml` に `~/.claude.json` のマウントを追加。entrypoint.sh は `~/.claude/` ディレクトリ全体を `cp -a` でコピーし（`.credentials.json` 以外のファイルも含む）、`~/.claude.json` もホストからコピーする。ホスト側の `~/.claude.json` がない場合のみ最小限のフォールバックを生成。
+
 ## 2026-04-08 | decision | Host-centric architecture redesign (Option C Hybrid)
 
 Docker 内で全処理を実行する既存アーキテクチャから、ホスト側でオーケストレーションを行いDockerはLLM/検索のみに使う「Hybrid」アーキテクチャに移行する決定を行った。

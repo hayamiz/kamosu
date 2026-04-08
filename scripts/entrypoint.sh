@@ -12,19 +12,24 @@ if [[ "${HOST_UID}" -ne 0 ]]; then
 fi
 
 readonly CLAUDE_HOST_DIR="/tmp/.claude-host"
+readonly CLAUDE_HOST_JSON="/tmp/.claude-host.json"
 readonly CLAUDE_TARGET_DIR="${HOME}/.claude"
 
-# Copy host Claude credentials into the container if mounted
-if [[ -f "${CLAUDE_HOST_DIR}/.credentials.json" ]]; then
+# Copy host ~/.claude/ contents into the container if mounted
+if [[ -d "${CLAUDE_HOST_DIR}" ]] && [[ -f "${CLAUDE_HOST_DIR}/.credentials.json" ]]; then
     mkdir -p "${CLAUDE_TARGET_DIR}"
-    cp "${CLAUDE_HOST_DIR}/.credentials.json" "${CLAUDE_TARGET_DIR}/.credentials.json"
-    echo "[entrypoint] Claude OAuth credentials loaded from host."
+    cp -a "${CLAUDE_HOST_DIR}/." "${CLAUDE_TARGET_DIR}/"
+    echo "[entrypoint] Claude credentials loaded from host ~/.claude/."
 fi
 
-# Ensure onboarding flag exists (prevents first-time setup wizard)
-if [[ -f "${CLAUDE_TARGET_DIR}/.credentials.json" ]] && [[ ! -f "${HOME}/.claude.json" ]]; then
+# Copy host ~/.claude.json if mounted
+if [[ -f "${CLAUDE_HOST_JSON}" ]]; then
+    cp "${CLAUDE_HOST_JSON}" "${HOME}/.claude.json"
+    echo "[entrypoint] Copied host ~/.claude.json."
+elif [[ -f "${CLAUDE_TARGET_DIR}/.credentials.json" ]] && [[ ! -f "${HOME}/.claude.json" ]]; then
+    # Fallback: create minimal onboarding flag if host file not available
     echo '{"completedOnboarding":true}' > "${HOME}/.claude.json"
-    echo "[entrypoint] Created .claude.json (onboarding flag)."
+    echo "[entrypoint] Created minimal .claude.json (onboarding flag)."
 fi
 
 # Version compatibility check (warn only, don't block)
