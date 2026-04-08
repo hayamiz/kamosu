@@ -61,7 +61,7 @@ run_cli_expect_fail() {
 setup_repo() {
   rm -rf "${WORK_DIR}/repo"
   mkdir -p "${WORK_DIR}/repo/raw/papers" "${WORK_DIR}/repo/wiki/my-drafts" "${WORK_DIR}/repo/wiki/concepts" "${WORK_DIR}/repo/wiki/_category"
-  echo "0.2.0" > "${WORK_DIR}/repo/.kb-toolkit-version"
+  echo "0.2.0" > "${WORK_DIR}/repo/.kamosu-version"
 }
 
 # ============================================================

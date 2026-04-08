@@ -141,7 +141,7 @@ kamosu init --claude-bedrock --aws-region us-east-1 my-topic
 kamosu shell -- kamosu-init --reconfigure
 ```
 
-Existing `.env` is backed up before overwriting.
+Existing `.kamosu-config` is backed up before overwriting.
 
 ## Data Repository Structure
 
@@ -150,9 +150,9 @@ my-topic/
 ├── CLAUDE.md                 # KB-specific LLM instructions (user-editable)
 ├── docker-compose.yml
 ├── docker-compose.claude-auth.yml  # OAuth auth override
-├── .env / .env.example
+├── .kamosu-config / .kamosu-config.example
 ├── .gitignore
-├── .kb-toolkit-version
+├── .kamosu-version
 ├── raw/                      # Raw data (user-managed)
 │   ├── papers/
 │   ├── web-clips/
@@ -180,8 +180,8 @@ docker build -t kamosu:local .
 ### Test with local image
 
 ```bash
-# Override the image in .env
-echo 'KB_TOOLKIT_VERSION=local' >> .env
+# Override the image in .kamosu-config
+echo 'KB_TOOLKIT_VERSION=local' >> .kamosu-config
 
 # Or edit docker-compose.yml directly:
 # image: kamosu:local

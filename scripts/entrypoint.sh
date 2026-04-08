@@ -28,8 +28,8 @@ if [[ -f "${CLAUDE_TARGET_DIR}/.credentials.json" ]] && [[ ! -f "${HOME}/.claude
 fi
 
 # Version compatibility check (warn only, don't block)
-if [[ -f "/workspace/.kb-toolkit-version" ]]; then
-    DATA_VERSION=$(cat /workspace/.kb-toolkit-version | tr -d '[:space:]')
+if [[ -f "/workspace/.kamosu-version" ]]; then
+    DATA_VERSION=$(cat /workspace/.kamosu-version | tr -d '[:space:]')
     IMAGE_VERSION="${KB_TOOLKIT_VERSION:-unknown}"
     if [[ "${IMAGE_VERSION}" != "unknown" ]] && [[ "${DATA_VERSION}" != "${IMAGE_VERSION}" ]]; then
         # Simple string comparison — works for semver in most cases

@@ -10,7 +10,7 @@
 - [x] claude-base.md（compilation, query, article format protocols） — 2026-04-05
 - [x] kamosu-init（スキャフォールディング生成） — 2026-04-05
 - [x] kb-claude.md.tmpl（データリポジトリ用 CLAUDE.md テンプレート） — 2026-04-05
-- [x] templates/（_master_index.md, docker-compose.yml, .gitignore, .env.example） — 2026-04-05
+- [x] templates/（_master_index.md, docker-compose.yml, .gitignore, .kamosu-config.example） — 2026-04-05
 - [x] entrypoint.sh（OAuth credential のコンテナ引き継ぎ） — 2026-04-05
 - [x] docker-compose.claude-auth.yml テンプレート — 2026-04-05
 - [x] kamosu-shell（claude コマンドの薄いラッパー、引数パススルー） — 2026-04-05
@@ -85,7 +85,7 @@
   - [x] Git ダーティチェック（未コミット変更があればエラー、--force で無視）
   - [x] --dry-run（実行予定の一覧表示）
   - [x] --to オプション（特定バージョンまで適用）
-  - [x] マイグレーション後の .kb-toolkit-version 更新 + git commit
+  - [x] マイグレーション後の .kamosu-version 更新 + git commit
 - [x] バージョン互換性チェック（entrypoint.sh 起動時にデータ版とイメージ版を比較） — 2026-04-05
 - [x] release-check: Migration Required 記載時に migrate/X.Y.Z.sh が存在するかチェック — 2026-04-05
 
@@ -95,11 +95,11 @@
   - [x] Subcommand dispatcher (`init`, `compile`, `lint`, `search`, `shell`, `migrate`, `update`, `version`, `help`)
   - [x] `kamosu init`: `docker run --rm -it -v $(pwd):/output IMAGE kamosu-init ...`
   - [x] `kamosu compile|lint|search|shell|migrate`: `docker compose run --rm kb kamosu-<cmd> ...`
-  - [x] `kamosu update`: pull Docker image pinned in `.kb-toolkit-version`
+  - [x] `kamosu update`: pull Docker image pinned in `.kamosu-version`
   - [x] `kamosu version`: show CLI version + Docker image version
   - [x] `kamosu help` and `--help` for each subcommand
   - [x] Docker availability check with clear error message
-  - [x] Image tag resolution from `.kb-toolkit-version` (or `latest` for init)
+  - [x] Image tag resolution from `.kamosu-version` (or `latest` for init)
 - [x] Installation script / instructions (curl one-liner) — 2026-04-06
 - [x] Tests for host CLI — 2026-04-06
   - [x] Subcommand routing (each subcommand calls the correct docker command)

@@ -4,7 +4,7 @@ services:
     volumes:
       - .:/workspace
     env_file:
-      - .env
+      - .kamosu-config
     environment:
       - HOST_UID=${HOST_UID:-0}
       - HOST_GID=${HOST_GID:-0}

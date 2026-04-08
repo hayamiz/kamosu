@@ -36,7 +36,7 @@ require_docker() {
 }
 
 require_data_repo() {
-  [[ -f .kb-toolkit-version ]] || die "Not a kamosu data repository (missing .kb-toolkit-version). Run this command from your KB directory."
+  [[ -f .kamosu-version ]] || die "Not a kamosu data repository (missing .kamosu-version). Run this command from your KB directory."
 }
 
 has_help_flag() {
@@ -49,8 +49,8 @@ has_help_flag() {
 }
 
 image_tag() {
-  if [[ -f .kb-toolkit-version ]]; then
-    cat .kb-toolkit-version
+  if [[ -f .kamosu-version ]]; then
+    cat .kamosu-version
   else
     echo "latest"
   fi
@@ -403,7 +403,7 @@ help_update() {
   cat <<'EOF'
 Usage: kamosu update
 
-Pull the Docker image pinned in .kb-toolkit-version (or latest).
+Pull the Docker image pinned in .kamosu-version (or latest).
 
 Options:
   -h, --help         Show this help message
@@ -729,7 +729,7 @@ cmd_migrate() {
   done
 
   local current_version
-  current_version=$(cat .kb-toolkit-version | tr -d '[:space:]')
+  current_version=$(cat .kamosu-version | tr -d '[:space:]')
 
   # Determine target version from image label
   local target_version
@@ -805,13 +805,13 @@ cmd_migrate() {
   done
 
   # Update version (host)
-  echo "${target_version}" > .kb-toolkit-version
-  info "Updated .kb-toolkit-version to ${target_version}."
+  echo "${target_version}" > .kamosu-version
+  info "Updated .kamosu-version to ${target_version}."
 
   # Git commit (host)
   if [[ "${opt_force}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     info "Committing migration changes..."
-    git_commit_and_push "migrate: ${current_version} → ${target_version}" .kb-toolkit-version
+    git_commit_and_push "migrate: ${current_version} → ${target_version}" .kamosu-version
   else
     if [[ "${opt_force}" == true ]]; then
       info "Force mode: skipping git commit. Commit manually when ready."
@@ -833,8 +833,8 @@ cmd_update() {
 cmd_version() {
   if has_help_flag "$@"; then help_version; return 0; fi
   echo "kamosu CLI ${KAMOSU_CLI_VERSION}"
-  if [[ -f .kb-toolkit-version ]]; then
-    echo "Data repo pinned to: $(cat .kb-toolkit-version)"
+  if [[ -f .kamosu-version ]]; then
+    echo "Data repo pinned to: $(cat .kamosu-version)"
   fi
   if command -v docker >/dev/null 2>&1; then
     local tag

@@ -64,7 +64,7 @@ kamosu is a Docker-based toolkit that leverages LLMs to build and maintain resea
 
 ### Authentication Modes
 - **Host OAuth inheritance** (default): Mount the host's `~/.claude/` into the container
-- **AWS Bedrock**: Set `AWS_PROFILE` and `AWS_REGION` in `.env`
+- **AWS Bedrock**: Set `AWS_PROFILE` and `AWS_REGION` in `.kamosu-config`
 
 ## References
 

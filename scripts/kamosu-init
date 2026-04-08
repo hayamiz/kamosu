@@ -247,8 +247,8 @@ scaffold() {
     # .gitignore
     cp "${TEMPLATES_DIR}/.gitignore.tmpl" "${kb_dir}/.gitignore"
 
-    # .env.example
-    cp "${TEMPLATES_DIR}/.env.example" "${kb_dir}/.env.example"
+    # .kamosu-config.example
+    cp "${TEMPLATES_DIR}/.kamosu-config.example" "${kb_dir}/.kamosu-config.example"
 
     # 3. Wiki initial files
     info "Setting up wiki initial files..."
@@ -273,7 +273,7 @@ EOF
 EOF
 
     # 4. Record toolkit version
-    echo "${version}" > "${kb_dir}/.kb-toolkit-version"
+    echo "${version}" > "${kb_dir}/.kamosu-version"
 }
 
 print_completion_message() {
@@ -306,19 +306,19 @@ print_completion_message() {
 reconfigure() {
     # Find data repository root
     local kb_dir
-    if [[ -f "/workspace/.kb-toolkit-version" ]]; then
+    if [[ -f "/workspace/.kamosu-version" ]]; then
         kb_dir="/workspace"
-    elif [[ -f "./.kb-toolkit-version" ]]; then
+    elif [[ -f "./.kamosu-version" ]]; then
         kb_dir="."
     else
-        error "Not in a kamosu data repository (missing .kb-toolkit-version). Run from within a data repo or via 'docker compose run kb kamosu-init --reconfigure'."
+        error "Not in a kamosu data repository (missing .kamosu-version). Run from within a data repo or via 'docker compose run kb kamosu-init --reconfigure'."
     fi
 
-    # Backup existing .env
-    if [[ -f "${kb_dir}/.env" ]]; then
-        local backup_name=".env.backup.$(date +%Y%m%d-%H%M%S)"
-        cp "${kb_dir}/.env" "${kb_dir}/${backup_name}"
-        info "Backed up existing .env to ${backup_name}"
+    # Backup existing .kamosu-config
+    if [[ -f "${kb_dir}/.kamosu-config" ]]; then
+        local backup_name=".kamosu-config.backup.$(date +%Y%m%d-%H%M%S)"
+        cp "${kb_dir}/.kamosu-config" "${kb_dir}/${backup_name}"
+        info "Backed up existing .kamosu-config to ${backup_name}"
     fi
 
     # Determine auth mode (interactive or from args)
@@ -326,8 +326,8 @@ reconfigure() {
         prompt_auth_mode
     fi
 
-    # Generate new .env
-    generate_env_file "${kb_dir}/.env"
+    # Generate new .kamosu-config
+    generate_env_file "${kb_dir}/.kamosu-config"
     info "Authentication reconfigured successfully."
 }
 
@@ -354,7 +354,7 @@ main() {
     fi
 
     scaffold "${kb_dir}"
-    generate_env_file "${kb_dir}/.env"
+    generate_env_file "${kb_dir}/.kamosu-config"
     print_completion_message "${kb_dir}"
 }
 

@@ -61,7 +61,7 @@ run_cli_expect_fail() {
 setup_repo() {
   rm -rf "${WORK_DIR}/repo"
   mkdir -p "${WORK_DIR}/repo/raw" "${WORK_DIR}/repo/wiki" "${WORK_DIR}/repo/outputs"
-  echo "0.2.0" > "${WORK_DIR}/repo/.kb-toolkit-version"
+  echo "0.2.0" > "${WORK_DIR}/repo/.kamosu-version"
   echo "CLAUDE.md" > "${WORK_DIR}/repo/CLAUDE.md"
 }
 
@@ -75,7 +75,7 @@ assert_file_contains <(echo "$output") "Usage: kamosu promote" "promote --help s
 echo "--- Test: error outside data repo ---"
 # ============================================================
 cd "${WORK_DIR}"
-rm -f "${WORK_DIR}/.kb-toolkit-version"
+rm -f "${WORK_DIR}/.kamosu-version"
 run_cli_expect_fail promote --list
 assert_eq 0 $? "promote fails outside data repo"
 

@@ -155,12 +155,12 @@ assert_file_contains <(echo "$output") "kamosu CLI" "version shows CLI version"
 # ============================================================
 echo "--- Test: version (inside data repo) ---"
 # ============================================================
-echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kamosu-version"
 cd "${WORK_DIR}"
 output="$(run_cli_capture version)"
 assert_file_contains <(echo "$output") "kamosu CLI" "version shows CLI version in data repo"
 assert_file_contains <(echo "$output") "Data repo pinned to: 0.2.0" "version shows pinned version"
-rm "${WORK_DIR}/.kb-toolkit-version"
+rm "${WORK_DIR}/.kamosu-version"
 
 # ============================================================
 echo "--- Test: init routes to docker run ---"
@@ -189,14 +189,14 @@ fi
 echo "--- Test: compile requires data repo ---"
 # ============================================================
 cd "${WORK_DIR}"
-rm -f "${WORK_DIR}/.kb-toolkit-version"
+rm -f "${WORK_DIR}/.kamosu-version"
 run_cli_expect_fail compile
 assert_eq 0 $? "compile fails outside data repo"
 
 # ============================================================
 echo "--- Test: compile --dry-run with no files ---"
 # ============================================================
-echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kamosu-version"
 mkdir -p "${WORK_DIR}/raw" "${WORK_DIR}/wiki"
 cd "${WORK_DIR}"
 output="$(run_cli_capture compile --dry-run)"
@@ -280,7 +280,7 @@ assert_file_contains <(echo "$output") "Usage: kamosu shell" "shell --help shows
 # ============================================================
 echo "--- Test: promote --list (no Docker needed) ---"
 # ============================================================
-echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kamosu-version"
 mkdir -p "${WORK_DIR}/wiki"
 rm -rf "${WORK_DIR}/outputs"
 cd "${WORK_DIR}"
@@ -311,7 +311,7 @@ assert_file_contains <(echo "$output") "Usage: kamosu migrate" "migrate --help s
 echo "--- Test: update pulls image ---"
 # ============================================================
 cd "${WORK_DIR}"
-echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kamosu-version"
 run_cli update
 assert_file_contains "${KAMOSU_MOCK_LOG}" "docker pull hayamiz/kamosu:0.2.0" "update pulls pinned image"
 
@@ -325,7 +325,7 @@ assert_file_contains <(echo "$output") "Usage: kamosu update" "update --help sho
 echo "--- Test: Docker not installed ---"
 # ============================================================
 # shell command requires Docker early, so it's a good test target
-echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kamosu-version"
 mkdir -p "${WORK_DIR}/wiki"
 cd "${WORK_DIR}"
 NO_DOCKER_BIN="${WORK_DIR}/no-docker-bin"

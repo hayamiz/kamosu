@@ -95,7 +95,7 @@ kamosu/
 │   ├── _master_index.md        # マスターインデックスの初期ファイル
 │   ├── docker-compose.yml.tmpl # データリポジトリ用 compose テンプレート
 │   ├── .gitignore.tmpl
-│   └── .env.example
+│   └── .kamosu-config.example
 ├── CHANGELOG.md                # リリースごとの変更記録
 └── tests/                      # ツール自体のテスト
 ```
@@ -104,11 +104,11 @@ kamosu/
 
 ```
 energy-db/
-├── .kb-toolkit-version         # 使用する kamosu バージョンのピン留め
+├── .kamosu-version         # 使用する kamosu バージョンのピン留め
 ├── CLAUDE.md                   # claude-base.md を継承 + KB 固有の指示
 ├── docker-compose.yml          # kamosu イメージ参照（薄い）
-├── .env                        # AWS 認証情報等（.gitignore 対象）
-├── .env.example
+├── .kamosu-config              # 認証モード・AWS設定等（.gitignore 対象）
+├── .kamosu-config.example
 ├── .gitignore
 ├── raw/                        # ユーザーが投入する生データ
 │   ├── papers/                 # 論文 PDF
@@ -264,10 +264,10 @@ kamosu init --reconfigure [OPTIONS]    # 既存リポジトリの認証再設定
 1. 引数パース・バリデーション
 2. 認証モード決定（引数指定 or インタラクティブプロンプト）
 3. ディレクトリ構造の作成（raw/, wiki/, wiki/my-drafts/, outputs/ とサブディレクトリ）
-4. テンプレートからのファイル生成（CLAUDE.md, docker-compose.yml, .gitignore, .env.example）
-5. `.env` を認証モードに応じて直接生成
+4. テンプレートからのファイル生成（CLAUDE.md, docker-compose.yml, .gitignore, .kamosu-config.example）
+5. `.kamosu-config` を認証モードに応じて直接生成
 6. wiki/ 初期ファイルの配置（_master_index.md, _category/, _log.md）
-7. `.kb-toolkit-version` にイメージバージョンを記録
+7. `.kamosu-version` にイメージバージョンを記録
 
 Git 初期化は行わない（ユーザーが自分のリモートを設定するため）。
 
@@ -388,11 +388,11 @@ kamosu migrate --force         # ダーティ状態でも強制実行
 
 **処理フロー**:
 1. Git ダーティチェック — **ホスト**（`--force` で無視）
-2. `.kb-toolkit-version` から現在のデータバージョンを読む — **ホスト**
+2. `.kamosu-version` から現在のデータバージョンを読む — **ホスト**
 3. Docker イメージラベルからターゲットバージョンを取得 — **ホスト**（`docker inspect`）
 4. `migrate/` から対象スクリプトを列挙 — **ホスト**（バージョン比較）
 5. 各スクリプトを Docker 内で順番に実行 — **Docker**
-6. `.kb-toolkit-version` をターゲットバージョンに更新 — **ホスト**
+6. `.kamosu-version` をターゲットバージョンに更新 — **ホスト**
 7. `git commit` — **ホスト**
 
 **マイグレーションスクリプトの規約** (`migrate/X.Y.Z.sh`):
@@ -511,7 +511,7 @@ services:
     volumes:
       - .:/workspace
     env_file:
-      - .env
+      - .kamosu-config
     environment:
       - HOST_UID=${HOST_UID:-0}
       - HOST_GID=${HOST_GID:-0}
@@ -669,8 +669,8 @@ git remote add origin <user's git remote URL>
 vim CLAUDE.md
 
 # 4. Configure AWS credentials (if using Bedrock)
-cp .env.example .env
-vim .env  # AWS_PROFILE, AWS_REGION, etc.
+cp .kamosu-config.example .kamosu-config
+vim .kamosu-config  # AWS_PROFILE, AWS_REGION, etc.
 
 # 5. Initial commit & push
 git add -A && git commit -m "init: knowledge base"
@@ -746,7 +746,7 @@ kamosu migrate
 #### 7.1 Authentication
 
 - EC2 上: IAM Role（推奨、profile 名 `as110-haya`）
-- ローカル: `.env` に `AWS_PROFILE` を設定
+- ローカル: `.kamosu-config` に `AWS_PROFILE` を設定
 
 #### 7.2 Model Selection
 
@@ -767,7 +767,7 @@ kamosu migrate
 
 - Toolkit: セマンティックバージョニング（MAJOR.MINOR.PATCH）
 - Docker Image: バージョンタグ + `latest`
-- Data Repo: `.kb-toolkit-version` でピン留め
+- Data Repo: `.kamosu-version` でピン留め
 
 #### 8.2 Semantic Versioning Rules
 
@@ -803,7 +803,7 @@ kamosu migrate
 | 一致 | 正常起動 |
 | データ < イメージ | 警告:「`kamosu migrate` を実行してください」 |
 | データ > イメージ | エラー:「イメージが古いです。`kamosu update` を実行してください」 |
-| `.kb-toolkit-version` がない | エラー:「kamosu データリポジトリではありません」 |
+| `.kamosu-version` がない | エラー:「kamosu データリポジトリではありません」 |
 
 **Note**: v0.x の間は CLI → イメージ方向のチェックのみ実装する（イメージ → CLI 方向の逆チェックは必要になった時点で追加）。バージョン不整合はデフォルトで警告表示とし、データ破損リスクがある場合のみハードエラーとする。
 

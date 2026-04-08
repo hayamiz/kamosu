@@ -38,7 +38,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - kamosu-init (scaffolding generation)
 - kamosu-compile (diff detection + Claude Code invocation + git commit)
 - entrypoint.sh (OAuth credential handling in containers)
-- Templates (kb-claude.md.tmpl, docker-compose.yml.tmpl, .gitignore.tmpl, .env.example)
+- Templates (kb-claude.md.tmpl, docker-compose.yml.tmpl, .gitignore.tmpl, .kamosu-config.example)
 
 ### Migration Required
 - N/A (initial release)

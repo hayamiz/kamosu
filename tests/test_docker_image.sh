@@ -28,7 +28,7 @@ for script in kamosu-init entrypoint.sh; do
 done
 
 echo "  [3/5] File placement..."
-for path in /opt/kamosu/claude-base.md /opt/kamosu/templates/kb-claude.md.tmpl /opt/kamosu/templates/docker-compose.yml.tmpl /opt/kamosu/templates/.env.example /opt/kamosu/VERSION; do
+for path in /opt/kamosu/claude-base.md /opt/kamosu/templates/kb-claude.md.tmpl /opt/kamosu/templates/docker-compose.yml.tmpl /opt/kamosu/templates/.kamosu-config.example /opt/kamosu/VERSION; do
     ASSERTIONS=$((ASSERTIONS + 1))
     if docker run --rm "${DOCKER_IMAGE}" test -f "${path}"; then
         :
