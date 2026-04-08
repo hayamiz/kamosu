@@ -428,8 +428,21 @@ EOF
 cmd_init() {
   if has_help_flag "$@"; then help_init; return 0; fi
   require_docker
-  local tag="latest"
-  docker run --rm -it -e HOST_UID -e HOST_GID -v "$(pwd)":/output "${KAMOSU_IMAGE}:${tag}" kamosu-init "$@"
+
+  # --reconfigure runs inside an existing data repo, so use compose_run
+  # (which mounts .:/workspace). Normal init uses docker run with /output.
+  local is_reconfigure=false
+  for arg in "$@"; do
+    [[ "$arg" == "--reconfigure" ]] && is_reconfigure=true
+  done
+
+  if [[ "$is_reconfigure" == true ]]; then
+    require_data_repo
+    compose_run kb kamosu-init "$@"
+  else
+    local tag="latest"
+    docker run --rm -it -e HOST_UID -e HOST_GID -v "$(pwd)":/output "${KAMOSU_IMAGE}:${tag}" kamosu-init "$@"
+  fi
 }
 
 cmd_compile() {
