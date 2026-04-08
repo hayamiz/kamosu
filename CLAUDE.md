@@ -20,7 +20,7 @@ kamosu is a Docker-based toolkit that leverages LLMs to build and maintain resea
 | `scripts/kamosu-init` | Scaffolding generator for data repositories |
 | `scripts/entrypoint.sh` | Authentication setup at container startup |
 | `templates/kb-claude.md.tmpl` | CLAUDE.md template for data repositories |
-| `templates/docker-compose.yml.tmpl` | Compose template for data repositories |
+| `scripts/kamosu-init` | Scaffolding generator (generates docker-compose.yml per auth mode) |
 | `VERSION` | Semantic version (currently 0.1.0) |
 | `TASKS.md` | Implementation tasks and progress tracking |
 | `DEVLOG.md` | Log of discoveries, decisions, and insights during development |
@@ -55,7 +55,7 @@ kamosu is a Docker-based toolkit that leverages LLMs to build and maintain resea
 - Error messages must be specific and actionable
 
 ### Template Naming Convention
-- Template files use the `*.tmpl` extension (e.g., `docker-compose.yml.tmpl`)
+- Template files use the `*.tmpl` extension (e.g., `kb-claude.md.tmpl`)
 - **Note**: `templates/kb-claude.md.tmpl` is the CLAUDE.md template for data repositories — it is separate from this project's `CLAUDE.md` (this file)
 
 ### Docker Image

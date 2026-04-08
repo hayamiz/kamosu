@@ -1,14 +1,14 @@
-# === Authentication Mode ===
+# === kamosu Configuration ===
+#
+# This file is loaded as env_file by docker-compose.yml.
+# To change authentication mode, run: kamosu init --reconfigure
 
-# Claude OAuth（ホスト認証情報の継承、デフォルト）
-# ホストで claude コマンドの OAuth 認証を済ませてから使用してください
-COMPOSE_FILE=docker-compose.yml:docker-compose.claude-auth.yml
-
-# AWS Bedrock 認証を使う場合は上の行をコメントアウトし、以下を設定:
-# COMPOSE_FILE=docker-compose.yml
+# === Authentication ===
+# For Claude OAuth: no variables needed (credentials are mounted automatically)
+# For AWS Bedrock: uncomment and set the following:
 # AWS_PROFILE=
 # AWS_REGION=
 
 # === Claude Model ===
-# e.g., claude-sonnet-4-20250514
+# e.g., claude-sonnet-4-20250514 (OAuth) or us.anthropic.claude-sonnet-4-20250514-v1:0 (Bedrock)
 ANTHROPIC_MODEL=

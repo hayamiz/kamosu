@@ -93,7 +93,7 @@ kamosu/
 ├── templates/
 │   ├── kb-claude.md.tmpl       # データ側 CLAUDE.md の雛形
 │   ├── _master_index.md        # マスターインデックスの初期ファイル
-│   ├── docker-compose.yml.tmpl # データリポジトリ用 compose テンプレート
+│   # docker-compose.yml はテンプレートではなく kamosu-init が認証モード別に直接生成
 │   ├── .gitignore.tmpl
 │   └── .kamosu-config.example
 ├── CHANGELOG.md                # リリースごとの変更記録
@@ -106,7 +106,7 @@ kamosu/
 energy-db/
 ├── .kamosu-version         # 使用する kamosu バージョンのピン留め
 ├── CLAUDE.md                   # claude-base.md を継承 + KB 固有の指示
-├── docker-compose.yml          # kamosu イメージ参照（薄い）
+├── docker-compose.yml          # 認証モード別に kamosu init が生成
 ├── .kamosu-config              # 認証モード・AWS設定等（.gitignore 対象）
 ├── .kamosu-config.example
 ├── .gitignore
@@ -254,17 +254,19 @@ kamosu init --reconfigure [OPTIONS]    # 既存リポジトリの認証再設定
 
 **認証モード（3種）**:
 
-| モード | COMPOSE_FILE | 追加設定 |
-|--------|-------------|---------|
-| Claude OAuth | `docker-compose.yml:docker-compose.claude-auth.yml` | なし |
-| Bedrock (profile) | `docker-compose.yml` | AWS_PROFILE, AWS_REGION |
-| Bedrock (EC2 IAM Role) | `docker-compose.yml` | AWS_REGION のみ |
+`kamosu init` は認証モードに応じた `docker-compose.yml` を直接生成する（テンプレートファイルは使用しない）。
+
+| モード | docker-compose.yml の差分 | .kamosu-config の内容 |
+|--------|--------------------------|---------------------|
+| Claude OAuth | `~/.claude`, `~/.claude.json` をマウント | `ANTHROPIC_MODEL=` のみ |
+| Bedrock (profile) | `~/.aws` をマウント | `AWS_PROFILE`, `AWS_REGION`, `ANTHROPIC_MODEL` |
+| Bedrock (EC2 IAM Role) | `~/.aws` をマウント | `AWS_REGION`, `ANTHROPIC_MODEL` |
 
 **処理フロー（新規作成）** — Docker 内の `kamosu-init` で実行:
 1. 引数パース・バリデーション
 2. 認証モード決定（引数指定 or インタラクティブプロンプト）
 3. ディレクトリ構造の作成（raw/, wiki/, wiki/my-drafts/, outputs/ とサブディレクトリ）
-4. テンプレートからのファイル生成（CLAUDE.md, docker-compose.yml, .gitignore, .kamosu-config.example）
+4. テンプレートからのファイル生成（CLAUDE.md, .gitignore, .kamosu-config.example）+ 認証モード別 docker-compose.yml 生成
 5. `.kamosu-config` を認証モードに応じて直接生成
 6. wiki/ 初期ファイルの配置（_master_index.md, _category/, _log.md）
 7. `.kamosu-version` にイメージバージョンを記録
@@ -504,12 +506,37 @@ Pre-commit guards (e.g., lint's `git diff --quiet` check) are kept at each call 
 
 #### 4.3 Data Repository側の docker-compose.yml
 
+`kamosu init` が認証モードに応じて `docker-compose.yml` を直接生成する。テンプレートファイルは使用しない。`kamosu init --reconfigure` で再生成可能。
+
+**OAuth モード時:**
+
 ```yaml
 services:
   kb:
     image: hayamiz/kamosu:${KB_TOOLKIT_VERSION:-latest}
     volumes:
       - .:/workspace
+      - ${HOME}/.claude:/tmp/.claude-host:ro
+      - ${HOME}/.claude.json:/tmp/.claude-host.json:ro
+    env_file:
+      - .kamosu-config
+    environment:
+      - HOST_UID=${HOST_UID:-0}
+      - HOST_GID=${HOST_GID:-0}
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+```
+
+**Bedrock モード時:**
+
+```yaml
+services:
+  kb:
+    image: hayamiz/kamosu:${KB_TOOLKIT_VERSION:-latest}
+    volumes:
+      - .:/workspace
+      - ${HOME}/.aws:/home/kamosu/.aws:ro
     env_file:
       - .kamosu-config
     environment:

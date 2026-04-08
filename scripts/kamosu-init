@@ -172,43 +172,73 @@ EOF
     esac
 }
 
-generate_env_file() {
+generate_config_file() {
     local output_path="$1"
 
     case "${AUTH_MODE}" in
         oauth)
-            cat > "${output_path}" <<'ENVEOF'
+            cat > "${output_path}" <<'CFGEOF'
 # Authentication: Claude OAuth
-# Host ~/.claude/ credentials are mounted into the container.
+# Host ~/.claude/ credentials are automatically mounted into the container.
 # Run 'claude' on host to authenticate before using kamosu.
-COMPOSE_FILE=docker-compose.yml:docker-compose.claude-auth.yml
 
 # Claude Model (e.g., claude-sonnet-4-20250514)
 ANTHROPIC_MODEL=
-ENVEOF
+CFGEOF
             ;;
         bedrock)
-            cat > "${output_path}" <<ENVEOF
+            cat > "${output_path}" <<CFGEOF
 # Authentication: AWS Bedrock (credentials/profile)
-COMPOSE_FILE=docker-compose.yml
 AWS_PROFILE=${AWS_PROFILE_VALUE}
 AWS_REGION=${AWS_REGION_VALUE}
 
 # Claude Model (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)
 ANTHROPIC_MODEL=
-ENVEOF
+CFGEOF
             ;;
         bedrock-iam)
-            cat > "${output_path}" <<ENVEOF
+            cat > "${output_path}" <<CFGEOF
 # Authentication: AWS Bedrock (EC2 IAM Role)
-COMPOSE_FILE=docker-compose.yml
 AWS_REGION=${AWS_REGION_VALUE}
 
 # Claude Model (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)
 ANTHROPIC_MODEL=
-ENVEOF
+CFGEOF
             ;;
     esac
+}
+
+generate_compose_file() {
+    local output_path="$1"
+
+    # Common service definition
+    local volumes_extra=""
+    case "${AUTH_MODE}" in
+        oauth)
+            volumes_extra='      - ${HOME}/.claude:/tmp/.claude-host:ro
+      - ${HOME}/.claude.json:/tmp/.claude-host.json:ro'
+            ;;
+        bedrock|bedrock-iam)
+            volumes_extra='      - ${HOME}/.aws:/home/kamosu/.aws:ro'
+            ;;
+    esac
+
+    cat > "${output_path}" <<COMPEOF
+services:
+  kb:
+    image: hayamiz/kamosu:\${KB_TOOLKIT_VERSION:-latest}
+    volumes:
+      - .:/workspace
+${volumes_extra}
+    env_file:
+      - .kamosu-config
+    environment:
+      - HOST_UID=\${HOST_UID:-0}
+      - HOST_GID=\${HOST_GID:-0}
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+COMPEOF
 }
 
 scaffold() {
@@ -238,11 +268,8 @@ scaffold() {
     # CLAUDE.md — replace TOPIC_NAME placeholder
     sed "s/\[TOPIC_NAME\]/${KB_NAME}/g" "${TEMPLATES_DIR}/kb-claude.md.tmpl" > "${kb_dir}/CLAUDE.md"
 
-    # docker-compose.yml
-    cp "${TEMPLATES_DIR}/docker-compose.yml.tmpl" "${kb_dir}/docker-compose.yml"
-
-    # docker-compose.claude-auth.yml (OAuth credential mount override)
-    cp "${TEMPLATES_DIR}/docker-compose.claude-auth.yml.tmpl" "${kb_dir}/docker-compose.claude-auth.yml"
+    # docker-compose.yml (auth-mode-specific)
+    generate_compose_file "${kb_dir}/docker-compose.yml"
 
     # .gitignore
     cp "${TEMPLATES_DIR}/.gitignore.tmpl" "${kb_dir}/.gitignore"
@@ -326,9 +353,11 @@ reconfigure() {
         prompt_auth_mode
     fi
 
-    # Generate new .kamosu-config
-    generate_env_file "${kb_dir}/.kamosu-config"
+    # Regenerate both .kamosu-config and docker-compose.yml
+    generate_config_file "${kb_dir}/.kamosu-config"
+    generate_compose_file "${kb_dir}/docker-compose.yml"
     info "Authentication reconfigured successfully."
+    info "Updated: .kamosu-config, docker-compose.yml"
 }
 
 main() {
@@ -354,7 +383,7 @@ main() {
     fi
 
     scaffold "${kb_dir}"
-    generate_env_file "${kb_dir}/.kamosu-config"
+    generate_config_file "${kb_dir}/.kamosu-config"
     print_completion_message "${kb_dir}"
 }
 

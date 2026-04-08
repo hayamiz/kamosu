@@ -12,7 +12,8 @@ KB_DIR="${TEST_OUTPUT_BASE}/${KB_NAME}"
 echo "  [1/3] End-to-end: init with OAuth..."
 kamosu_run kamosu-init --claude-oauth "${KB_NAME}" > /dev/null
 assert_dir_exists "${KB_DIR}"
-assert_file_contains "${KB_DIR}/.kamosu-config" "COMPOSE_FILE=docker-compose.yml:docker-compose.claude-auth.yml" ".env should have OAuth config"
+assert_file_contains "${KB_DIR}/docker-compose.yml" ".claude-host:ro" "OAuth compose should mount .claude-host"
+assert_file_contains "${KB_DIR}/docker-compose.yml" ".claude-host.json:ro" "OAuth compose should mount .claude.json"
 
 echo "  [2/3] End-to-end: init with Bedrock profile..."
 kamosu_run kamosu-init --claude-bedrock --aws-profile testprof --aws-region us-west-2 "smoke-bedrock" > /dev/null
