@@ -528,7 +528,7 @@ cmd_compile() {
   local prompt
   prompt=$(read_prompt "compile.txt")
 
-  if ! docker_claude "${prompt}" "Edit,Write,Read,Glob,Grep"; then
+  if ! docker_claude "${prompt}" "Edit,Write,Read,Glob,Grep,Bash(pdftotext:*),Bash(pdfinfo:*)"; then
     warn "Claude Code compilation failed. The .ingest-queue has been preserved."
     warn "Run 'kamosu compile --resume' to retry, or 'kamosu compile --clean' to start over."
     exit 1
