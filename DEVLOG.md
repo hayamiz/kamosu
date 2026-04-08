@@ -11,6 +11,38 @@
 
 ---
 
+## 2026-04-08 | decision | Host-centric architecture redesign (Option C Hybrid)
+
+Docker 内で全処理を実行する既存アーキテクチャから、ホスト側でオーケストレーションを行いDockerはLLM/検索のみに使う「Hybrid」アーキテクチャに移行する決定を行った。
+
+**問題**: `kamosu-compile` が Docker コンテナ内で `git pull/push` を実行するため、SSH鍵/credential helper をコンテナに引き継ぐ必要があった。SSH agent forwarding はプラットフォーム依存（Linux/macOS/WSL で挙動が異なる）で、ユーザーに追加の認証設定を強いる。
+
+**検討した選択肢**:
+- **Option A**: 現状維持 + Docker 内 Git 認証パイプライン追加 → プラットフォーム依存が大きく保守困難
+- **Option B**: 全ロジックをホスト CLI に移動 → Docker 契約が不明瞭
+- **Option C (採用)**: ホストオーケストレーション + Docker は LLM/検索のみ → 明確な分離、Git 問題解消
+- **Option D**: Docker 廃止 → 環境再現性喪失、ラボ展開困難
+
+**Option C の要点**:
+- Git 操作・ファイル検出・キュー管理・タイムスタンプ管理 → ホスト CLI (`cli/kamosu`)
+- `claude -p` (LLM)、`python3 searcher.py` (検索)、`kamosu-init` (初期化) → Docker
+- プロンプトは Docker image 内 `/opt/kamosu/prompts/` に配置（CLI からプロンプト更新を分離）
+- バージョン互換チェックは Docker image label + `docker inspect`（コンテナ起動不要）
+
+**3名の独立レビュアーの主要フィードバック**:
+1. バージョンチェックに `docker compose run ... cat VERSION` は使わず image label + `docker inspect` を使う
+2. Claude 失敗時のクラッシュリカバリ: `.ingest-queue` を意図的に残し `--resume`/`--clean` を提供
+3. `--dry-run` は Docker 不要で動作すべき
+4. bidirectional version check は v0.x では過剰、CLI→image 方向のみで十分
+
+詳細分析は `redesign.md` (commit 0dce104) に記録済み。
+
+## 2026-04-08 | gotcha | Docker Compose V1/V2 compatibility
+
+`cli/kamosu` で `docker compose run --rm` をハードコードしていたが、Docker Compose V2 プラグインが未インストールの環境では `unknown flag: --rm` エラーが発生。`docker` が `compose` をサブコマンドとして認識せず、`--rm` を docker 自身のフラグとしてパースしていた。
+
+**解決策**: `detect_compose_cmd()` ヘルパーを追加。`docker compose version` が成功すれば V2、失敗すれば `docker-compose` (V1 standalone) にフォールバック。全コマンドを `compose_run()` 経由に統一。
+
 ## 2026-04-07 | decision | Remove kb- prefix from generated directory names
 
 `kamosu init my-topic` previously created `kb-my-topic/`. The `kb-` prefix was redundant — the user already chose the name intentionally. Now the directory name matches the input exactly: `kamosu init my-topic` → `my-topic/`.
