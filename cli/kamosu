@@ -5,9 +5,10 @@ set -euo pipefail
 # Architecture: Host-centric orchestration. Docker used only for LLM (claude) and search (python3).
 # Install: curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | sudo install /dev/stdin /usr/local/bin/kamosu
 
-KAMOSU_CLI_VERSION="0.2.0"
+# __KAMOSU_VERSION__ is replaced by `make release` from the VERSION file.
+# During development, "dev" indicates an unreleased build.
+KAMOSU_CLI_VERSION="dev"
 KAMOSU_IMAGE="hayamiz/kamosu"
-MIN_IMAGE_VERSION="0.2.0"
 
 # Export host UID/GID so containers can create files with matching ownership
 export HOST_UID="$(id -u)"
@@ -163,14 +164,17 @@ version_le() {
 }
 
 check_version_compat() {
+  # Skip check during development
+  if [[ "$KAMOSU_CLI_VERSION" == "dev" ]]; then
+    return 0
+  fi
   local image_version
   image_version="$(docker inspect --format '{{index .Config.Labels "kamosu.version"}}' "$(full_image)" 2>/dev/null || true)"
   if [[ -z "$image_version" ]] || [[ "$image_version" == "<no value>" ]]; then
-    # Image doesn't have labels (pre-v0.2.0 image or not pulled yet)
     return 0
   fi
-  if version_gt "$MIN_IMAGE_VERSION" "$image_version"; then
-    warn "Docker image $(full_image) is version ${image_version}, but CLI requires >= ${MIN_IMAGE_VERSION}. Run: kamosu update"
+  if [[ "$KAMOSU_CLI_VERSION" != "$image_version" ]]; then
+    warn "CLI version (${KAMOSU_CLI_VERSION}) differs from Docker image (${image_version}). Run: kamosu update && curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/v${image_version}/cli/kamosu | sudo install /dev/stdin /usr/local/bin/kamosu"
   fi
 }
 

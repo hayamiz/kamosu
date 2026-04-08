@@ -410,7 +410,7 @@ The main orchestration script that runs on the host machine. All git operations,
 - **Host-side orchestration**: Git, file I/O, version checks all run on the host, using the user's native credentials and tools
 - **Docker for LLM only**: `claude` and `python3` invocations are delegated to Docker
 - **Single-file distribution**: Installable via a single `curl` command
-- **Version compatibility**: CLI embeds `MIN_IMAGE_VERSION` and checks against the Docker image on startup
+- **Version compatibility**: CLI と Docker イメージは同一バージョンを共有。`VERSION` ファイルが Single Source of Truth
 
 **Host Dependencies**: `bash`, `git`, `docker` (with compose plugin or standalone `docker-compose`). All other commands (`find`, `grep`, `date`, `touch`, `wc`, `sort`, `mkdir`) are standard coreutils, universally available on Linux, macOS, and WSL.
 
@@ -438,7 +438,7 @@ cli/kamosu
   read_image_label()          # docker inspect --format for image labels
 
   # === VERSION CHECK ===
-  check_version_compat()      # CLI MIN_IMAGE_VERSION vs image label
+  check_version_compat()      # CLI version == image version check
 
   # === COMMANDS ===
   cmd_init(), cmd_compile(), cmd_lint(), cmd_search(),
@@ -491,7 +491,7 @@ Pre-commit guards (e.g., lint's `git diff --quiet` check) are kept at each call 
 - claude-base.md: `/opt/kamosu/claude-base.md` に配置
 - テンプレート: `/opt/kamosu/templates/` に配置
 - 環境変数: `KB_TOOLKIT_VERSION` を VERSION ファイルから設定
-- イメージラベル: `LABEL kamosu.version=X.Y.Z` と `LABEL kamosu.min_cli_version=X.Y.Z` をビルド時に付与。ホスト CLI が `docker inspect --format` でコンテナ起動なしに読み取る
+- イメージラベル: `LABEL kamosu.version=X.Y.Z` をビルド時に付与。ホスト CLI が `docker inspect --format` でコンテナ起動なしに読み取る
 - UID/GID マッピング: `gosu` をインストール。`HOST_UID`/`HOST_GID` 環境変数が渡された場合、entrypoint でホストユーザーと同じ UID/GID の実行ユーザーを作成し、`gosu` で権限を降格してからコマンドを実行する。これにより、バインドマウント上に作成されるファイル（Claude Code が書く wiki 記事）がホストユーザーの所有になる
 
 **Note**: Git 操作はホスト側で行うため、Docker イメージ内の git は `kamosu-init` と LLM ツールの用途のみ。
@@ -783,18 +783,29 @@ kamosu migrate
 
 **migrate/ ディレクトリ** — バージョンごとのマイグレーションスクリプト。`kamosu-migrate` がチェーン適用する。詳細は Section 3.3 kamosu-migrate を参照。
 
-#### 8.4 Version Compatibility Check
+#### 8.4 Single Version Policy
 
-ホスト CLI がコマンド実行前に、CLI バージョン・Docker イメージバージョン・データリポジトリバージョンの整合性を検証する。
+CLI と Docker イメージは **同一のバージョン番号** を共有する。`VERSION` ファイルが Single Source of Truth。
 
-**チェック方法**: Docker イメージラベルを `docker inspect --format '{{index .Config.Labels "kamosu.version"}}'` で読み取る。コンテナ起動は不要（ゼロオーバーヘッド）。
+```
+VERSION (e.g. "0.2.0")
+  ├── Docker image tag: hayamiz/kamosu:0.2.0
+  ├── Docker image label: kamosu.version=0.2.0
+  ├── CLI version (stamped at release): KAMOSU_CLI_VERSION="0.2.0"
+  └── Data repo pin: .kamosu-version → 0.2.0
+```
 
-**CLI → イメージ互換性チェック**:
+**CLI バージョン管理**:
+- 開発中: `KAMOSU_CLI_VERSION="dev"` — バージョンチェックをスキップ
+- リリース時: `make release` が `VERSION` ファイルの値を `cli/kamosu` に `sed` で注入し、コミット → タグ → プッシュ
+
+**CLI ↔ イメージ互換性チェック**:
 
 | 状態 | 動作 |
 |------|------|
-| イメージバージョン >= CLI の `MIN_IMAGE_VERSION` | 正常 |
-| イメージバージョン < CLI の `MIN_IMAGE_VERSION` | 警告 + 具体的な修正コマンド表示:「Run: kamosu update」 |
+| CLI == イメージ | 正常 |
+| CLI == "dev" | チェックスキップ（開発中） |
+| CLI != イメージ | 警告 + 両方の更新コマンドを表示 |
 
 **データリポジトリ → イメージ互換性チェック** (entrypoint.sh で実行):
 
@@ -805,7 +816,7 @@ kamosu migrate
 | データ > イメージ | エラー:「イメージが古いです。`kamosu update` を実行してください」 |
 | `.kamosu-version` がない | エラー:「kamosu データリポジトリではありません」 |
 
-**Note**: v0.x の間は CLI → イメージ方向のチェックのみ実装する（イメージ → CLI 方向の逆チェックは必要になった時点で追加）。バージョン不整合はデフォルトで警告表示とし、データ破損リスクがある場合のみハードエラーとする。
+**Design Rationale**: CLI と image のバージョン対応表の管理は不要。「同じバージョンを使え」という単一ルールで十分。kamosu は個人/小チーム向けツールであり、CLI と image を別々にバージョニングするユースケースはない。
 
 #### 8.5 Migration Safety
 

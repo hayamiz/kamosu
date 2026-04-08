@@ -4,7 +4,7 @@ IMAGE := $(DOCKER_REPO):$(VERSION)
 IMAGE_LATEST := $(DOCKER_REPO):latest
 TEST_OUTPUT := test-output
 
-.PHONY: help build build-nc test test-init smoke shell run-init clean release-check release push version
+.PHONY: help build build-nc test test-init smoke shell run-init clean release-check release push version stamp-cli unstamp-cli
 
 ## help: Show this help message (default target)
 help:
@@ -85,14 +85,26 @@ release-check:
 	fi
 	@echo "All checks passed for v$(VERSION)."
 
-## release: Create release tag and push (with confirmation)
-release: release-check
+## stamp-cli: Inject VERSION into cli/kamosu (for release)
+stamp-cli:
+	@sed -i 's/^KAMOSU_CLI_VERSION="dev"/KAMOSU_CLI_VERSION="$(VERSION)"/' cli/kamosu
+	@echo "Stamped cli/kamosu with version $(VERSION)."
+
+## unstamp-cli: Restore cli/kamosu to dev version
+unstamp-cli:
+	@sed -i 's/^KAMOSU_CLI_VERSION="[0-9.]*"/KAMOSU_CLI_VERSION="dev"/' cli/kamosu
+	@echo "Restored cli/kamosu to dev version."
+
+## release: Stamp CLI, create release tag and push (with confirmation)
+release: release-check stamp-cli
 	@echo ""
 	@echo "About to release v$(VERSION):"
-	@echo "  - Create git tag v$(VERSION)"
-	@echo "  - Push to origin"
+	@echo "  - Stamp cli/kamosu with version $(VERSION)"
+	@echo "  - Commit, tag v$(VERSION), and push"
 	@echo ""
-	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || (echo "Aborted." && exit 1)
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || ($(MAKE) unstamp-cli && echo "Aborted." && exit 1)
+	git add cli/kamosu
+	git commit -m "release: v$(VERSION)"
 	git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
 	git push origin $$(git branch --show-current)
 	git push origin "v$(VERSION)"
