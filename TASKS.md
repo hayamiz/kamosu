@@ -106,7 +106,47 @@
   - [x] Error handling (Docker not installed, not in a data repo, etc.)
 - [x] Update README.md with new installation and usage instructions — 2026-04-06
 
-## Phase 3: Lab Deployment
+## Phase 3: Host-Centric Redesign
+
+- [x] Architecture redesign analysis (4 options evaluated, Option C Hybrid selected) — 2026-04-08
+  - [x] Independent review from 3 perspectives (DevOps, CLI UX, End-user)
+  - [x] Decision documented in DEVLOG.md, full analysis in git history (commit 0dce104)
+- [x] Update kamosu-design.md with Option C architecture — 2026-04-08
+  - [x] New Section 2.1 system overview diagram (host orchestration + Docker for LLM only)
+  - [x] New Section 3.3 Docker Contract (explicit boundary)
+  - [x] New Section 3.4 Prompts (Docker image stores LLM prompts)
+  - [x] New Section 3.5 Host CLI Commands (host/Docker role for each command)
+  - [x] New Section 3.6 Host CLI design (internal structure, helpers, version compat)
+  - [x] Updated Section 4 Dockerfile (image labels, reduced scripts)
+  - [x] Updated Section 8.4 Version Compatibility (docker inspect, no container startup)
+  - [x] New Phase 3 in Section 9 Implementation Phases
+- [x] Implement host-centric CLI (`cli/kamosu` rewrite, 913 LOC) — 2026-04-08
+  - [x] Git operations (pull/commit/push) run natively on host
+  - [x] File detection, queue management, timestamps on host
+  - [x] Docker Compose V1/V2 auto-detection (`detect_compose_cmd`)
+  - [x] Version compatibility via Docker image labels + `docker inspect`
+  - [x] `docker_claude()` / `compose_run()` helpers for Docker-only invocations
+  - [x] `git_commit_and_push()` shared helper (variadic paths, message arg)
+  - [x] Crash recovery: stale `.ingest-queue` detection with `--resume`/`--clean`
+  - [x] `--dry-run` works without Docker for compile
+  - [x] `--list` works without Docker for promote
+- [x] Create `prompts/` directory with LLM prompt templates — 2026-04-08
+  - [x] compile.txt, lint.txt, lint-fix.txt, promote.txt, promote-dry-run.txt
+  - [x] Template placeholders: `{{REPORT_FILE}}`, `{{TODAY}}`, `{{FILE_LIST}}`
+- [x] Update Dockerfile — 2026-04-08
+  - [x] Add `LABEL kamosu.version` and `LABEL kamosu.min_cli_version`
+  - [x] Copy `prompts/` to `/opt/kamosu/prompts/`
+  - [x] Remove obsolete script copies (only kamosu-init + entrypoint.sh remain)
+- [x] Remove obsolete container scripts — 2026-04-08
+  - [x] Deleted: kamosu-compile, kamosu-lint, kamosu-promote, kamosu-search, kamosu-shell, kamosu-migrate
+  - [x] Kept: kamosu-init (needs templates/version from image), entrypoint.sh (credential setup)
+- [x] Rewrite tests for new architecture — 2026-04-08
+  - [x] test_cli.sh: 36 assertions (help, routing, --dry-run no-Docker, Docker-not-running)
+  - [x] test_kamosu_compile.sh: 15 assertions (file detect, timestamp, --resume, --clean, my-drafts)
+  - [x] test_kamosu_promote.sh: 16 assertions (--list, history, --dry-run, Docker routing)
+  - [x] test_docker_image.sh: updated for reduced scripts + prompts/ checks
+
+## Phase 4: Lab Deployment
 
 - [ ] セマンティック検索（sentence-transformers）
 - [ ] Web UI for search
@@ -115,6 +155,7 @@
 
 ## Future
 
+- [ ] Docker 不要モード: ホストに Claude Code がインストール済みの場合、Docker をスキップして直接実行
 - [ ] GitHub Actions CI/CD（tag push で Docker image 自動ビルド・プッシュ + GitHub Release 作成）
 - [ ] クエリ深度の段階分け（Quick / Standard / Deep）— Query Protocol 拡張
 - [ ] kamosu-ingest: Jina Reader (`r.jina.ai`) による CLI データ投入（URL → raw/web-clips/ に Markdown 保存）
@@ -129,6 +170,6 @@
 
 ## Backlog
 
-- kamosu-compile テスト: `claude -p` 呼び出し後のフロー（タイムスタンプ更新、git commit、push）はダミー claude スクリプトでモック可能。必要になったら追加
-- release-check の migrate/ 整合性チェック: kamosu-migrate 実装（Phase 2）と合わせて追加
-- プロトコル文書の整合性テスト: claude-base.md が前提とするディレクトリ構造と kamosu-init の生成物を grep で突き合わせる。低優先度だが有用
+- Makefile: Phase 3 の構造変更を反映（Docker イメージテスト等のターゲット更新）
+- test_docker_image.sh / test_entrypoint.sh / test_kamosu_init.sh / test_smoke.sh / test_protocol_consistency.sh: Docker イメージのリビルドが必要なため Phase 3 変更後は未検証。次回 `make build` 後に通すこと
+- entrypoint.sh の semver 比較バグ修正: 辞書順比較 (`[[ "0.9.0" > "0.10.0" ]]`) を数値比較に置き換え
