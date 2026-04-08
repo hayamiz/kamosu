@@ -3,3 +3,5 @@ Then read .ingest-queue for the list of files to compile.
 Follow the Compilation Protocol (Section 3) to process each file.
 Ensure all indexes (_master_index.md, _category/*.md, _cross_references.md) are updated.
 Append a compile entry to wiki/_log.md.
+
+Note: Use the Read tool to read PDF files directly. The Read tool supports PDF natively — do not attempt to install packages or use Bash commands.
