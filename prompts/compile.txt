@@ -1,0 +1,5 @@
+Read /opt/kamosu/claude-base.md for the base protocol.
+Then read .ingest-queue for the list of files to compile.
+Follow the Compilation Protocol (Section 3) to process each file.
+Ensure all indexes (_master_index.md, _category/*.md, _cross_references.md) are updated.
+Append a compile entry to wiki/_log.md.

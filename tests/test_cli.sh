@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers.sh"
@@ -16,11 +16,16 @@ mkdir -p "${MOCK_BIN}"
 
 cat > "${MOCK_BIN}/docker" <<'MOCK'
 #!/usr/bin/env bash
-# Log the full command for assertion
 echo "docker $*" >> "${KAMOSU_MOCK_LOG}"
 
 # Handle "docker info" (used by require_docker)
 if [[ "${1:-}" == "info" ]]; then
+  exit 0
+fi
+
+# Handle "docker compose version" (used by detect_compose_cmd)
+if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "version" ]]; then
+  echo "Docker Compose version v2.40.0"
   exit 0
 fi
 
@@ -30,33 +35,73 @@ if [[ "${1:-}" == "images" ]]; then
   exit 0
 fi
 
+# Handle "docker inspect" (used by check_version_compat and cmd_migrate)
+if [[ "${1:-}" == "inspect" ]]; then
+  echo "0.2.0"
+  exit 0
+fi
+
+# Handle "docker run --rm --entrypoint cat" (used by read_prompt)
+if [[ "${1:-}" == "run" ]] && [[ "$*" == *"--entrypoint cat"* ]]; then
+  # Return mock prompt content
+  echo "mock prompt content"
+  exit 0
+fi
+
+# Handle "docker compose run" (used by compose_run -> docker_claude)
+if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "run" ]]; then
+  exit 0
+fi
+
+# Handle "docker pull"
+if [[ "${1:-}" == "pull" ]]; then
+  exit 0
+fi
+
 exit 0
 MOCK
 chmod +x "${MOCK_BIN}/docker"
 
-# Mock docker compose as a separate handler (docker invokes compose as a subcommand)
-# Override docker to also handle "compose" subcommand
-cat > "${MOCK_BIN}/docker" <<'MOCK'
+# Mock git (for commands that use git)
+cat > "${MOCK_BIN}/git" <<'MOCK'
 #!/usr/bin/env bash
-echo "docker $*" >> "${KAMOSU_MOCK_LOG}"
+echo "git $*" >> "${KAMOSU_MOCK_LOG}"
 
-if [[ "${1:-}" == "info" ]]; then
+# Handle "git rev-parse --is-inside-work-tree"
+if [[ "${1:-}" == "rev-parse" ]] && [[ "${2:-}" == "--is-inside-work-tree" ]]; then
   exit 0
 fi
 
-if [[ "${1:-}" == "images" ]]; then
-  echo "abc123"
+# Handle "git remote -v"
+if [[ "${1:-}" == "remote" ]]; then
+  echo "origin	https://github.com/test/repo.git (fetch)"
   exit 0
 fi
 
+# Handle "git branch --show-current"
+if [[ "${1:-}" == "branch" ]] && [[ "${2:-}" == "--show-current" ]]; then
+  echo "main"
+  exit 0
+fi
+
+# Handle "git pull"
+if [[ "${1:-}" == "pull" ]]; then
+  exit 0
+fi
+
+# Handle "git diff --quiet"
+if [[ "${1:-}" == "diff" ]]; then
+  exit 0
+fi
+
+# Handle "git add", "git commit", "git push"
 exit 0
 MOCK
-chmod +x "${MOCK_BIN}/docker"
+chmod +x "${MOCK_BIN}/git"
 
-export KAMOSU_MOCK_LOG="${WORK_DIR}/docker-calls.log"
+export KAMOSU_MOCK_LOG="${WORK_DIR}/mock-calls.log"
 
 run_cli() {
-  # Prepend mock bin to PATH so our mock docker is used
   > "${KAMOSU_MOCK_LOG}"  # clear log
   PATH="${MOCK_BIN}:${PATH}" bash "${CLI}" "$@"
 }
@@ -132,7 +177,6 @@ echo "--- Test: init --help does not call docker run ---"
 cd "${WORK_DIR}"
 output="$(run_cli_capture init --help)"
 assert_file_contains <(echo "$output") "Usage: kamosu init" "init --help shows usage"
-# The mock log should only have empty or no docker run call
 if grep -q "docker run" "${KAMOSU_MOCK_LOG}" 2>/dev/null; then
   ASSERTIONS=$((ASSERTIONS + 1))
   FAILURES=$((FAILURES + 1))
@@ -150,25 +194,56 @@ run_cli_expect_fail compile
 assert_eq 0 $? "compile fails outside data repo"
 
 # ============================================================
-echo "--- Test: compile routes to docker compose run ---"
+echo "--- Test: compile --dry-run with no files ---"
 # ============================================================
-echo "0.1.0" > "${WORK_DIR}/.kb-toolkit-version"
+echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+mkdir -p "${WORK_DIR}/raw" "${WORK_DIR}/wiki"
 cd "${WORK_DIR}"
-run_cli compile --dry-run
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-compile --dry-run" "compile calls docker compose run"
+output="$(run_cli_capture compile --dry-run)"
+assert_file_contains <(echo "$output") "No new or updated files" "compile --dry-run reports no files"
+# Should NOT call docker (no Docker needed for dry-run)
+if grep -q "docker compose run" "${KAMOSU_MOCK_LOG}" 2>/dev/null; then
+  ASSERTIONS=$((ASSERTIONS + 1))
+  FAILURES=$((FAILURES + 1))
+  echo "  ASSERT FAIL: compile --dry-run should not invoke Docker"
+else
+  ASSERTIONS=$((ASSERTIONS + 1))
+fi
+
+# ============================================================
+echo "--- Test: compile --dry-run detects new files ---"
+# ============================================================
+echo "test content" > "${WORK_DIR}/raw/test-paper.txt"
+cd "${WORK_DIR}"
+output="$(run_cli_capture compile --dry-run)"
+assert_file_contains <(echo "$output") "raw/test-paper.txt" "compile --dry-run detects new file"
+assert_file_contains <(echo "$output") "Dry run complete" "compile --dry-run shows completion"
+rm "${WORK_DIR}/raw/test-paper.txt"
+
+# ============================================================
+echo "--- Test: compile invokes Claude via Docker ---"
+# ============================================================
+echo "test content" > "${WORK_DIR}/raw/test-paper.txt"
+cd "${WORK_DIR}"
+run_cli compile
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "compile invokes claude via docker compose"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "git pull" "compile runs git pull on host"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "git add" "compile runs git add on host"
+rm -f "${WORK_DIR}/raw/test-paper.txt" "${WORK_DIR}/.ingest-queue" "${WORK_DIR}/.last-compile-timestamp"
 
 # ============================================================
 echo "--- Test: compile --help ---"
 # ============================================================
 output="$(run_cli_capture compile --help)"
 assert_file_contains <(echo "$output") "Usage: kamosu compile" "compile --help shows usage"
+assert_file_contains <(echo "$output") "resume" "compile --help shows --resume option"
 
 # ============================================================
-echo "--- Test: lint routes to docker compose run ---"
+echo "--- Test: lint invokes Claude via Docker ---"
 # ============================================================
 cd "${WORK_DIR}"
-run_cli lint --fix
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-lint --fix" "lint calls docker compose run"
+run_cli lint
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "lint invokes claude via docker compose"
 
 # ============================================================
 echo "--- Test: lint --help ---"
@@ -177,11 +252,11 @@ output="$(run_cli_capture lint --help)"
 assert_file_contains <(echo "$output") "Usage: kamosu lint" "lint --help shows usage"
 
 # ============================================================
-echo "--- Test: search routes to docker compose run ---"
+echo "--- Test: search routes to Docker python3 ---"
 # ============================================================
 cd "${WORK_DIR}"
 run_cli search "query execution"
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-search query execution" "search calls docker compose run"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb python3" "search invokes python3 via docker compose"
 
 # ============================================================
 echo "--- Test: search --help ---"
@@ -190,11 +265,11 @@ output="$(run_cli_capture search --help)"
 assert_file_contains <(echo "$output") "Usage: kamosu search" "search --help shows usage"
 
 # ============================================================
-echo "--- Test: shell routes to docker compose run ---"
+echo "--- Test: shell routes to Docker claude ---"
 # ============================================================
 cd "${WORK_DIR}"
 run_cli shell -p "hello"
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-shell -p hello" "shell calls docker compose run"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude -p hello" "shell invokes claude via docker compose"
 
 # ============================================================
 echo "--- Test: shell --help ---"
@@ -203,11 +278,28 @@ output="$(run_cli_capture shell --help)"
 assert_file_contains <(echo "$output") "Usage: kamosu shell" "shell --help shows usage"
 
 # ============================================================
-echo "--- Test: migrate routes to docker compose run ---"
+echo "--- Test: promote --list (no Docker needed) ---"
 # ============================================================
+echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+mkdir -p "${WORK_DIR}/wiki"
+rm -rf "${WORK_DIR}/outputs"
 cd "${WORK_DIR}"
-run_cli migrate --dry-run
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-migrate --dry-run" "migrate calls docker compose run"
+output="$(run_cli_capture promote --list)"
+assert_file_contains <(echo "$output") "No outputs/" "promote --list without outputs/"
+# Should NOT call docker
+if grep -q "docker compose run" "${KAMOSU_MOCK_LOG}" 2>/dev/null; then
+  ASSERTIONS=$((ASSERTIONS + 1))
+  FAILURES=$((FAILURES + 1))
+  echo "  ASSERT FAIL: promote --list should not invoke Docker"
+else
+  ASSERTIONS=$((ASSERTIONS + 1))
+fi
+
+# ============================================================
+echo "--- Test: promote --help ---"
+# ============================================================
+output="$(run_cli_capture promote --help)"
+assert_file_contains <(echo "$output") "Usage: kamosu promote" "promote --help shows usage"
 
 # ============================================================
 echo "--- Test: migrate --help ---"
@@ -219,8 +311,9 @@ assert_file_contains <(echo "$output") "Usage: kamosu migrate" "migrate --help s
 echo "--- Test: update pulls image ---"
 # ============================================================
 cd "${WORK_DIR}"
+echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
 run_cli update
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker pull hayamiz/kamosu:0.1.0" "update pulls pinned image"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker pull hayamiz/kamosu:0.2.0" "update pulls pinned image"
 
 # ============================================================
 echo "--- Test: update --help ---"
@@ -231,20 +324,21 @@ assert_file_contains <(echo "$output") "Usage: kamosu update" "update --help sho
 # ============================================================
 echo "--- Test: Docker not installed ---"
 # ============================================================
+# shell command requires Docker early, so it's a good test target
+echo "0.2.0" > "${WORK_DIR}/.kb-toolkit-version"
+mkdir -p "${WORK_DIR}/wiki"
 cd "${WORK_DIR}"
-# Create a PATH without docker by shadowing it with a script that fails
 NO_DOCKER_BIN="${WORK_DIR}/no-docker-bin"
 mkdir -p "${NO_DOCKER_BIN}"
 cat > "${NO_DOCKER_BIN}/docker" <<'NODOCK'
 #!/usr/bin/env bash
-# Simulate docker present but daemon not running
 if [[ "${1:-}" == "info" ]]; then
   exit 1
 fi
 exit 0
 NODOCK
 chmod +x "${NO_DOCKER_BIN}/docker"
-output="$(PATH="${NO_DOCKER_BIN}:/usr/bin:/bin" bash "${CLI}" compile 2>&1 || true)"
+output="$(PATH="${NO_DOCKER_BIN}:/usr/bin:/bin" bash "${CLI}" shell 2>&1 || true)"
 if echo "$output" | grep -q "Docker daemon is not running"; then
   ASSERTIONS=$((ASSERTIONS + 1))
 else

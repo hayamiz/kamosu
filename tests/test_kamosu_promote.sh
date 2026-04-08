@@ -1,176 +1,176 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers.sh"
 
-PROMOTE_SCRIPT="${SCRIPT_DIR}/../scripts/kamosu-promote"
+CLI="${SCRIPT_DIR}/../cli/kamosu"
 WORK_DIR="/tmp/kamosu-promote-test-$$"
-OUTPUT_FILE="${WORK_DIR}/test-output.txt"
 
 setup
 mkdir -p "${WORK_DIR}"
 
-# Helper: create a minimal data repo structure
-create_data_repo() {
-    local dir="$1"
-    mkdir -p "${dir}/raw/papers" "${dir}/wiki/concepts" "${dir}/wiki/_category" "${dir}/wiki/my-drafts" "${dir}/outputs"
-    echo "# Test KB" > "${dir}/CLAUDE.md"
-    echo "0.1.0" > "${dir}/.kb-toolkit-version"
-    cat > "${dir}/wiki/_master_index.md" <<'INDEX'
-# Master Index
+# Create mock docker and git
+MOCK_BIN="${WORK_DIR}/mock-bin"
+mkdir -p "${MOCK_BIN}"
 
-Last updated: 2026-04-06
+cat > "${MOCK_BIN}/docker" <<'MOCK'
+#!/usr/bin/env bash
+echo "docker $*" >> "${KAMOSU_MOCK_LOG}"
+if [[ "${1:-}" == "info" ]]; then exit 0; fi
+if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "version" ]]; then echo "v2.40.0"; exit 0; fi
+if [[ "${1:-}" == "inspect" ]]; then echo "0.2.0"; exit 0; fi
+if [[ "${1:-}" == "run" ]] && [[ "$*" == *"--entrypoint cat"* ]]; then echo "mock prompt {{FILE_LIST}} {{TODAY}}"; exit 0; fi
+if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "run" ]]; then exit 0; fi
+exit 0
+MOCK
+chmod +x "${MOCK_BIN}/docker"
 
-## Categories
+cat > "${MOCK_BIN}/git" <<'MOCK'
+#!/usr/bin/env bash
+echo "git $*" >> "${KAMOSU_MOCK_LOG}"
+if [[ "${1:-}" == "rev-parse" ]]; then exit 0; fi
+if [[ "${1:-}" == "remote" ]]; then echo "origin	https://github.com/test/repo.git (fetch)"; exit 0; fi
+if [[ "${1:-}" == "branch" ]] && [[ "${2:-}" == "--show-current" ]]; then echo "main"; exit 0; fi
+exit 0
+MOCK
+chmod +x "${MOCK_BIN}/git"
 
-| Category | Articles | Summary |
-|----------|----------|---------|
+export KAMOSU_MOCK_LOG="${WORK_DIR}/mock-calls.log"
 
-## Statistics
-- Total articles: 0
-- Total categories: 0
-- Last compiled: 2026-04-06T00:00:00Z
-INDEX
+run_cli() {
+  > "${KAMOSU_MOCK_LOG}"
+  PATH="${MOCK_BIN}:${PATH}" bash "${CLI}" "$@"
 }
 
-# Helper: capture output to file for assertions
-capture() {
-    "$@" > "${OUTPUT_FILE}" 2>&1 || true
+run_cli_capture() {
+  > "${KAMOSU_MOCK_LOG}"
+  PATH="${MOCK_BIN}:${PATH}" bash "${CLI}" "$@" 2>&1
+}
+
+run_cli_expect_fail() {
+  > "${KAMOSU_MOCK_LOG}"
+  if PATH="${MOCK_BIN}:${PATH}" bash "${CLI}" "$@" 2>/dev/null; then
+    return 1
+  else
+    return 0
+  fi
+}
+
+# Setup a fake data repo
+setup_repo() {
+  rm -rf "${WORK_DIR}/repo"
+  mkdir -p "${WORK_DIR}/repo/raw" "${WORK_DIR}/repo/wiki" "${WORK_DIR}/repo/outputs"
+  echo "0.2.0" > "${WORK_DIR}/repo/.kb-toolkit-version"
+  echo "CLAUDE.md" > "${WORK_DIR}/repo/CLAUDE.md"
 }
 
 # ============================================================
 echo "--- Test: --help shows usage ---"
 # ============================================================
-capture bash "${PROMOTE_SCRIPT}" --help
-assert_file_contains "${OUTPUT_FILE}" "Usage: kamosu-promote" "--help shows usage"
-assert_file_contains "${OUTPUT_FILE}" "dry-run" "--help mentions --dry-run"
-assert_file_contains "${OUTPUT_FILE}" "unpromoted" "--help mentions --list"
+output="$(run_cli_capture promote --help)"
+assert_file_contains <(echo "$output") "Usage: kamosu promote" "promote --help shows usage"
 
 # ============================================================
 echo "--- Test: error outside data repo ---"
 # ============================================================
 cd "${WORK_DIR}"
-rm -f CLAUDE.md
-capture bash "${PROMOTE_SCRIPT}" outputs/test.md
-assert_file_contains "${OUTPUT_FILE}" "CLAUDE.md not found" "errors outside data repo"
+rm -f "${WORK_DIR}/.kb-toolkit-version"
+run_cli_expect_fail promote --list
+assert_eq 0 $? "promote fails outside data repo"
 
 # ============================================================
 echo "--- Test: error on non-existent file ---"
 # ============================================================
-REPO_DIR="${WORK_DIR}/repo-nonexist"
-create_data_repo "${REPO_DIR}"
-cd "${REPO_DIR}"
-capture bash "${PROMOTE_SCRIPT}" outputs/does-not-exist.md
-assert_file_contains "${OUTPUT_FILE}" "File not found" "errors on non-existent file"
+setup_repo
+cd "${WORK_DIR}/repo"
+run_cli_expect_fail promote outputs/nonexistent.md
+assert_eq 0 $? "promote fails on nonexistent file"
 
 # ============================================================
 echo "--- Test: error with no files specified ---"
 # ============================================================
-cd "${REPO_DIR}"
-capture bash "${PROMOTE_SCRIPT}"
-assert_file_contains "${OUTPUT_FILE}" "No files specified" "errors when no files specified"
+cd "${WORK_DIR}/repo"
+run_cli_expect_fail promote
+assert_eq 0 $? "promote fails with no files"
 
 # ============================================================
 echo "--- Test: --list with no outputs ---"
 # ============================================================
-REPO_DIR_EMPTY="${WORK_DIR}/repo-empty"
-create_data_repo "${REPO_DIR_EMPTY}"
-cd "${REPO_DIR_EMPTY}"
-rmdir "${REPO_DIR_EMPTY}/outputs"
-capture bash "${PROMOTE_SCRIPT}" --list
-assert_file_contains "${OUTPUT_FILE}" "No outputs/ directory" "--list handles missing outputs/"
+setup_repo
+rm -rf "${WORK_DIR}/repo/outputs"
+cd "${WORK_DIR}/repo"
+output="$(run_cli_capture promote --list)"
+assert_file_contains <(echo "$output") "No outputs/ directory" "--list handles missing outputs/"
 
 # ============================================================
 echo "--- Test: --list shows unpromoted files ---"
 # ============================================================
-REPO_DIR_LIST="${WORK_DIR}/repo-list"
-create_data_repo "${REPO_DIR_LIST}"
-cd "${REPO_DIR_LIST}"
-echo "# Analysis A" > outputs/analysis-a.md
-echo "# Analysis B" > outputs/analysis-b.md
-capture bash "${PROMOTE_SCRIPT}" --list
-assert_file_contains "${OUTPUT_FILE}" "analysis-a.md" "--list shows unpromoted file a"
-assert_file_contains "${OUTPUT_FILE}" "analysis-b.md" "--list shows unpromoted file b"
+setup_repo
+echo "analysis content" > "${WORK_DIR}/repo/outputs/analysis.md"
+echo "comparison content" > "${WORK_DIR}/repo/outputs/comparison.md"
+cd "${WORK_DIR}/repo"
+output="$(run_cli_capture promote --list)"
+assert_file_contains <(echo "$output") "outputs/analysis.md" "--list shows analysis.md"
+assert_file_contains <(echo "$output") "outputs/comparison.md" "--list shows comparison.md"
 
 # ============================================================
 echo "--- Test: --list filters promoted files ---"
 # ============================================================
-cd "${REPO_DIR_LIST}"
-echo "2026-04-06T00:00:00Z	outputs/analysis-a.md" > .promote-history
-capture bash "${PROMOTE_SCRIPT}" --list
-assert_file_not_contains "${OUTPUT_FILE}" "analysis-a.md" "--list hides promoted file"
-assert_file_contains "${OUTPUT_FILE}" "analysis-b.md" "--list still shows unpromoted file"
+echo "2026-04-08T00:00:00Z	outputs/analysis.md" > "${WORK_DIR}/repo/.promote-history"
+cd "${WORK_DIR}/repo"
+output="$(run_cli_capture promote --list)"
+assert_file_not_contains <(echo "$output") "analysis.md" "--list filters promoted files"
+assert_file_contains <(echo "$output") "comparison.md" "--list shows unpromoted files"
+
+# ============================================================
+echo "--- Test: --list does not call Docker ---"
+# ============================================================
+cd "${WORK_DIR}/repo"
+run_cli promote --list >/dev/null 2>&1 || true
+if grep -q "docker compose run" "${KAMOSU_MOCK_LOG}" 2>/dev/null; then
+  ASSERTIONS=$((ASSERTIONS + 1))
+  FAILURES=$((FAILURES + 1))
+  echo "  ASSERT FAIL: --list should not invoke Docker"
+else
+  ASSERTIONS=$((ASSERTIONS + 1))
+fi
 
 # ============================================================
 echo "--- Test: --dry-run does not write .promote-history ---"
 # ============================================================
-REPO_DIR_DRYRUN="${WORK_DIR}/repo-dryrun"
-create_data_repo "${REPO_DIR_DRYRUN}"
-cd "${REPO_DIR_DRYRUN}"
-echo "# Test output" > outputs/test-output.md
-
-# Mock claude
-MOCK_BIN="${WORK_DIR}/mock-bin"
-mkdir -p "${MOCK_BIN}"
-cat > "${MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "Mock claude: would process files"
-exit 0
-MOCK
-chmod +x "${MOCK_BIN}/claude"
-
-PATH="${MOCK_BIN}:${PATH}" bash "${PROMOTE_SCRIPT}" --dry-run outputs/test-output.md >/dev/null 2>&1 || true
-if [[ -f .promote-history ]]; then
-    ASSERTIONS=$((ASSERTIONS + 1))
-    FAILURES=$((FAILURES + 1))
-    echo "  ASSERT FAIL: --dry-run should not create .promote-history"
+setup_repo
+echo "test content" > "${WORK_DIR}/repo/outputs/test-output.md"
+cd "${WORK_DIR}/repo"
+run_cli promote --dry-run outputs/test-output.md
+ASSERTIONS=$((ASSERTIONS + 1))
+if [[ ! -f "${WORK_DIR}/repo/.promote-history" ]]; then
+  :
 else
-    ASSERTIONS=$((ASSERTIONS + 1))
+  FAILURES=$((FAILURES + 1))
+  echo "  ASSERT FAIL: --dry-run should not write .promote-history"
 fi
 
 # ============================================================
-echo "--- Test: full promote records history (mock claude) ---"
+echo "--- Test: full promote records history ---"
 # ============================================================
-REPO_DIR_FULL="${WORK_DIR}/repo-full"
-create_data_repo "${REPO_DIR_FULL}"
-cd "${REPO_DIR_FULL}"
-echo "# Full test" > outputs/full-test.md
-
-# Init git so the script doesn't fail on git commands
-git init -q .
-git add -A
-git commit -q -m "init"
-
-PATH="${MOCK_BIN}:${PATH}" bash "${PROMOTE_SCRIPT}" outputs/full-test.md >/dev/null 2>&1 || true
-assert_file_exists ".promote-history" "promote creates .promote-history"
-assert_file_contains ".promote-history" "outputs/full-test.md" ".promote-history contains promoted file"
+setup_repo
+echo "test content" > "${WORK_DIR}/repo/outputs/full-test.md"
+cd "${WORK_DIR}/repo"
+run_cli promote outputs/full-test.md
+assert_file_exists "${WORK_DIR}/repo/.promote-history" ".promote-history created"
+assert_file_contains "${WORK_DIR}/repo/.promote-history" "outputs/full-test.md" ".promote-history records file"
 
 # ============================================================
-echo "--- Test: CLI promote --help ---"
+echo "--- Test: promote invokes Claude via Docker ---"
 # ============================================================
-CLI="${SCRIPT_DIR}/../cli/kamosu"
-CLI_MOCK_BIN="${WORK_DIR}/cli-mock-bin"
-mkdir -p "${CLI_MOCK_BIN}"
-cat > "${CLI_MOCK_BIN}/docker" <<'MOCK'
-#!/usr/bin/env bash
-echo "docker $*" >> "${KAMOSU_MOCK_LOG:-/dev/null}"
-if [[ "${1:-}" == "info" ]]; then exit 0; fi
-exit 0
-MOCK
-chmod +x "${CLI_MOCK_BIN}/docker"
-
-export KAMOSU_MOCK_LOG="${WORK_DIR}/docker-calls.log"
-PATH="${CLI_MOCK_BIN}:${PATH}" bash "${CLI}" promote --help > "${OUTPUT_FILE}" 2>&1
-assert_file_contains "${OUTPUT_FILE}" "Usage: kamosu promote" "CLI promote --help shows usage"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb claude" "promote invokes claude via docker"
 
 # ============================================================
-echo "--- Test: CLI promote routes to docker compose ---"
+echo "--- Test: promote runs git commit on host ---"
 # ============================================================
-cd "${REPO_DIR_FULL}"
-> "${KAMOSU_MOCK_LOG}"
-PATH="${CLI_MOCK_BIN}:${PATH}" bash "${CLI}" promote outputs/full-test.md >/dev/null 2>&1 || true
-assert_file_contains "${KAMOSU_MOCK_LOG}" "docker compose run --rm kb kamosu-promote" "CLI promote calls docker compose"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "git add" "promote runs git add"
+assert_file_contains "${KAMOSU_MOCK_LOG}" "git commit" "promote runs git commit"
 
 # ============================================================
 # Cleanup

@@ -1,0 +1,17 @@
+Read /opt/kamosu/claude-base.md for the base protocol.
+
+Promote the following Q&A output(s) into wiki articles:
+{{FILE_LIST}}
+
+Follow the Promote Protocol (Section 6 of claude-base.md):
+1. Read each source file and understand the content.
+2. Read _master_index.md and relevant category indexes to find integration targets.
+3. Either create new articles in wiki/concepts/ or merge into existing articles.
+   - Follow Article Format (Section 2) for new articles.
+   - Add the output file path to the sources: frontmatter field.
+4. Add backlinks from related articles.
+5. Update all indexes: _master_index.md, affected _category/*.md, _cross_references.md.
+6. Append a promote entry to wiki/_log.md:
+   ## [{{TODAY}}] promote | <summary>
+   - Promoted: <file list>
+   - Created/updated articles: [[article-a]], [[article-b]]

@@ -2,26 +2,67 @@
 set -euo pipefail
 
 # kamosu — Host CLI for the kamosu knowledge base toolkit
+# Architecture: Host-centric orchestration. Docker used only for LLM (claude) and search (python3).
 # Install: curl -fsSL https://raw.githubusercontent.com/hayamiz/kamosu/master/cli/kamosu | sudo install /dev/stdin /usr/local/bin/kamosu
 
-KAMOSU_CLI_VERSION="0.1.0"
+KAMOSU_CLI_VERSION="0.2.0"
 KAMOSU_IMAGE="hayamiz/kamosu"
+MIN_IMAGE_VERSION="0.2.0"
 
 # Export host UID/GID so containers can create files with matching ownership
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
-# --- Helpers ---
+# ===================================================================
+# HELPERS
+# ===================================================================
 
 die() {
   echo "kamosu: error: $*" >&2
   exit 1
 }
 
+warn() {
+  echo "kamosu: warning: $*" >&2
+}
+
+info() {
+  echo "[kamosu] $1"
+}
+
 require_docker() {
   command -v docker >/dev/null 2>&1 || die "Docker is not installed. See https://docs.docker.com/get-docker/"
   docker info >/dev/null 2>&1 || die "Docker daemon is not running. Start Docker and try again."
 }
+
+require_data_repo() {
+  [[ -f .kb-toolkit-version ]] || die "Not a kamosu data repository (missing .kb-toolkit-version). Run this command from your KB directory."
+}
+
+has_help_flag() {
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+image_tag() {
+  if [[ -f .kb-toolkit-version ]]; then
+    cat .kb-toolkit-version
+  else
+    echo "latest"
+  fi
+}
+
+full_image() {
+  echo "${KAMOSU_IMAGE}:$(image_tag)"
+}
+
+# ===================================================================
+# DOCKER HELPERS
+# ===================================================================
 
 # Detect the available compose command: "docker compose" (V2) or "docker-compose" (V1)
 COMPOSE_CMD=""
@@ -41,32 +82,191 @@ compose_run() {
   $COMPOSE_CMD run --rm "$@"
 }
 
-require_data_repo() {
-  [[ -f .kb-toolkit-version ]] || die "Not a kamosu data repository (missing .kb-toolkit-version). Run this command from your KB directory."
+# Read a prompt template from the Docker image (no container startup needed for cached images)
+read_prompt() {
+  local prompt_name="$1"
+  docker run --rm --entrypoint cat "$(full_image)" "/opt/kamosu/prompts/${prompt_name}"
 }
 
-image_tag() {
-  if [[ -f .kb-toolkit-version ]]; then
-    cat .kb-toolkit-version
-  else
-    echo "latest"
+# Run claude inside Docker with a prompt and allowed tools
+docker_claude() {
+  local prompt="$1"
+  local allowed_tools="$2"
+  compose_run kb claude -p "${prompt}" --allowedTools "${allowed_tools}"
+}
+
+# ===================================================================
+# GIT HELPERS
+# ===================================================================
+
+git_pull_if_remote() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+  if git remote -v 2>/dev/null | grep -q 'origin'; then
+    info "Pulling latest changes from remote..."
+    git pull --rebase origin "$(git branch --show-current 2>/dev/null || echo main)" 2>/dev/null || warn "Git pull failed. Continuing with local state."
   fi
 }
 
-full_image() {
-  echo "${KAMOSU_IMAGE}:$(image_tag)"
+git_push_if_remote() {
+  if git remote -v 2>/dev/null | grep -q 'origin'; then
+    info "Pushing to remote..."
+    git push origin "$(git branch --show-current 2>/dev/null || echo main)" || warn "Git push failed."
+  fi
 }
 
-has_help_flag() {
-  for arg in "$@"; do
-    case "$arg" in
-      --help|-h) return 0 ;;
-    esac
+# git_commit_and_push MESSAGE PATH [PATH...]
+git_commit_and_push() {
+  local message="$1"; shift
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    warn "Not a git repository. Skipping commit and push."
+    return 0
+  fi
+  git add "$@"
+  git commit -m "$message" || { warn "Nothing to commit."; return 0; }
+  git_push_if_remote
+}
+
+# ===================================================================
+# VERSION HELPERS
+# ===================================================================
+
+# Compare two semver strings. Returns: 0 if equal, 1 if $1 > $2, 2 if $1 < $2
+version_compare() {
+  if [[ "$1" == "$2" ]]; then
+    return 0
+  fi
+  local IFS=.
+  local i ver1=($1) ver2=($2)
+  for ((i=0; i<3; i++)); do
+    local v1="${ver1[i]:-0}"
+    local v2="${ver2[i]:-0}"
+    if ((v1 > v2)); then
+      return 1
+    elif ((v1 < v2)); then
+      return 2
+    fi
   done
-  return 1
+  return 0
 }
 
-# --- Subcommand help texts ---
+version_gt() {
+  version_compare "$1" "$2"
+  [[ $? -eq 1 ]]
+}
+
+version_le() {
+  version_compare "$1" "$2"
+  local result=$?
+  [[ $result -eq 0 ]] || [[ $result -eq 2 ]]
+}
+
+check_version_compat() {
+  local image_version
+  image_version="$(docker inspect --format '{{index .Config.Labels "kamosu.version"}}' "$(full_image)" 2>/dev/null || true)"
+  if [[ -z "$image_version" ]] || [[ "$image_version" == "<no value>" ]]; then
+    # Image doesn't have labels (pre-v0.2.0 image or not pulled yet)
+    return 0
+  fi
+  if version_gt "$MIN_IMAGE_VERSION" "$image_version"; then
+    warn "Docker image $(full_image) is version ${image_version}, but CLI requires >= ${MIN_IMAGE_VERSION}. Run: kamosu update"
+  fi
+}
+
+# ===================================================================
+# FILE DETECTION (compile)
+# ===================================================================
+
+readonly TIMESTAMP_FILE=".last-compile-timestamp"
+readonly QUEUE_FILE=".ingest-queue"
+
+detect_changed_files() {
+  local opt_force="$1"
+  local opt_file="$2"
+  local files=()
+
+  if [[ -n "${opt_file}" ]]; then
+    if [[ ! -f "${opt_file}" ]]; then
+      die "Specified file not found: ${opt_file}"
+    fi
+    files+=("${opt_file}")
+  elif [[ "${opt_force}" == true ]]; then
+    while IFS= read -r -d '' file; do
+      files+=("${file}")
+    done < <(find raw/ -type f -print0 2>/dev/null)
+  else
+    local find_args=()
+    if [[ -f "${TIMESTAMP_FILE}" ]]; then
+      find_args=(-newer "${TIMESTAMP_FILE}")
+    fi
+    while IFS= read -r -d '' file; do
+      files+=("${file}")
+    done < <(find raw/ -type f "${find_args[@]}" -print0 2>/dev/null)
+  fi
+
+  # Also check my-drafts/ for status: to-compile
+  if [[ -d "wiki/my-drafts" ]]; then
+    local draft_find_args=()
+    if [[ "${opt_force}" == false ]] && [[ -f "${TIMESTAMP_FILE}" ]]; then
+      draft_find_args=(-newer "${TIMESTAMP_FILE}")
+    fi
+    while IFS= read -r -d '' file; do
+      if grep -q 'status:.*to-compile' "${file}" 2>/dev/null; then
+        files+=("${file}")
+      fi
+    done < <(find wiki/my-drafts/ -type f -name '*.md' "${draft_find_args[@]}" -print0 2>/dev/null)
+  fi
+
+  if [[ ${#files[@]} -gt 0 ]]; then
+    printf '%s\n' "${files[@]}"
+  fi
+}
+
+# ===================================================================
+# PROMOTE HELPERS
+# ===================================================================
+
+readonly HISTORY_FILE=".promote-history"
+
+is_promoted() {
+  local file="$1"
+  if [[ -f "${HISTORY_FILE}" ]]; then
+    grep -qF "	${file}" "${HISTORY_FILE}" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+list_unpromoted() {
+  if [[ ! -d "outputs" ]]; then
+    info "No outputs/ directory found."
+    return 0
+  fi
+
+  local found=false
+  while IFS= read -r -d '' file; do
+    if ! is_promoted "${file}"; then
+      echo "  ${file}"
+      found=true
+    fi
+  done < <(find outputs/ -type f -name '*.md' -print0 2>/dev/null | sort -z)
+
+  if [[ "${found}" == false ]]; then
+    info "No unpromoted files in outputs/."
+  fi
+}
+
+record_promoted() {
+  local file="$1"
+  local timestamp
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "${timestamp}	${file}" >> "${HISTORY_FILE}"
+}
+
+# ===================================================================
+# SUBCOMMAND HELP TEXTS
+# ===================================================================
 
 help_init() {
   cat <<'EOF'
@@ -98,6 +298,8 @@ Options:
   --force            Recompile all raw files
   --dry-run          Show target files only (no compilation)
   --file <path>      Compile a specific file
+  --resume           Resume interrupted compilation using existing .ingest-queue
+  --clean            Remove stale .ingest-queue and re-scan
   -h, --help         Show this help message
 
 Examples:
@@ -219,7 +421,9 @@ Options:
 EOF
 }
 
-# --- Subcommands ---
+# ===================================================================
+# SUBCOMMANDS
+# ===================================================================
 
 cmd_init() {
   if has_help_flag "$@"; then help_init; return 0; fi
@@ -230,58 +434,400 @@ cmd_init() {
 
 cmd_compile() {
   if has_help_flag "$@"; then help_compile; return 0; fi
-  require_docker
   require_data_repo
-  compose_run kb kamosu-compile "$@"
+
+  # Parse args
+  local opt_force=false
+  local opt_dry_run=false
+  local opt_file=""
+  local opt_resume=false
+  local opt_clean=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force)     opt_force=true; shift ;;
+      --dry-run)   opt_dry_run=true; shift ;;
+      --file)      [[ $# -lt 2 ]] && die "--file requires a path argument."; opt_file="$2"; shift 2 ;;
+      --resume)    opt_resume=true; shift ;;
+      --clean)     opt_clean=true; shift ;;
+      *)           die "Unknown option: $1" ;;
+    esac
+  done
+
+  # Check prerequisites
+  [[ -d "raw" ]] || die "raw/ directory not found. Are you in a kamosu data repository?"
+  [[ -d "wiki" ]] || die "wiki/ directory not found. Are you in a kamosu data repository?"
+
+  # Handle stale .ingest-queue
+  if [[ -f "${QUEUE_FILE}" ]] && [[ "${opt_resume}" == false ]] && [[ "${opt_clean}" == false ]]; then
+    echo "kamosu: A previous compilation was interrupted (.ingest-queue exists)."
+    echo "  Run 'kamosu compile --resume' to retry with the same files."
+    echo "  Run 'kamosu compile --clean' to discard the queue and re-scan."
+    exit 1
+  fi
+  if [[ "${opt_clean}" == true ]] && [[ -f "${QUEUE_FILE}" ]]; then
+    rm -f "${QUEUE_FILE}"
+    info "Removed stale ${QUEUE_FILE}."
+  fi
+
+  # Step 1: Git pull (host)
+  git_pull_if_remote
+
+  # Step 2: Detect changed files (host) — skip if --resume
+  if [[ "${opt_resume}" == true ]] && [[ -f "${QUEUE_FILE}" ]]; then
+    info "Resuming with existing ${QUEUE_FILE}..."
+    local changed_files
+    changed_files=$(cat "${QUEUE_FILE}")
+  else
+    info "Scanning for new/updated files..."
+    local changed_files
+    changed_files=$(detect_changed_files "${opt_force}" "${opt_file}")
+  fi
+
+  if [[ -z "${changed_files}" ]]; then
+    info "No new or updated files found. Nothing to compile."
+    exit 0
+  fi
+
+  local file_count
+  file_count=$(echo "${changed_files}" | wc -l | tr -d ' ')
+  info "Found ${file_count} file(s) to compile:"
+  echo "${changed_files}" | while IFS= read -r f; do
+    echo "  - ${f}"
+  done
+
+  # Dry run — stop here (no Docker needed)
+  if [[ "${opt_dry_run}" == true ]]; then
+    info "Dry run complete. Files listed above would be compiled."
+    exit 0
+  fi
+
+  # Step 3: Write ingest queue (host)
+  echo "${changed_files}" > "${QUEUE_FILE}"
+
+  # Step 4: Invoke Claude Code (Docker)
+  require_docker
+  check_version_compat
+  info "Invoking Claude Code for compilation..."
+  local prompt
+  prompt=$(read_prompt "compile.txt")
+
+  if ! docker_claude "${prompt}" "Edit,Write,Read,Glob,Grep"; then
+    warn "Claude Code compilation failed. The .ingest-queue has been preserved."
+    warn "Run 'kamosu compile --resume' to retry, or 'kamosu compile --clean' to start over."
+    exit 1
+  fi
+
+  # Step 5: Update timestamp (host)
+  touch "${TIMESTAMP_FILE}"
+  info "Updated ${TIMESTAMP_FILE}."
+
+  # Step 6: Clean up queue (host)
+  rm -f "${QUEUE_FILE}"
+
+  # Step 7: Git commit and push (host)
+  info "Committing changes..."
+  git_commit_and_push "compile: processed ${file_count} file(s)
+
+Files compiled:
+${changed_files}" wiki/ "${TIMESTAMP_FILE}"
+
+  info "Compilation complete!"
 }
 
 cmd_lint() {
   if has_help_flag "$@"; then help_lint; return 0; fi
-  require_docker
   require_data_repo
-  compose_run kb kamosu-lint "$@"
+
+  # Parse args
+  local opt_fix=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fix)        opt_fix=true; shift ;;
+      --check-only) opt_fix=false; shift ;;
+      *)            die "Unknown option: $1" ;;
+    esac
+  done
+
+  [[ -d "wiki" ]] || die "wiki/ directory not found."
+
+  local today
+  today=$(date +%Y-%m-%d)
+  local report_file="outputs/lint-report-${today}.md"
+  mkdir -p outputs
+
+  require_docker
+  check_version_compat
+  info "Running lint checks..."
+  if [[ "${opt_fix}" == true ]]; then
+    info "Auto-fix mode enabled."
+  fi
+
+  # Read prompt template and substitute placeholders
+  local prompt_name
+  if [[ "${opt_fix}" == true ]]; then
+    prompt_name="lint-fix.txt"
+  else
+    prompt_name="lint.txt"
+  fi
+  local prompt
+  prompt=$(read_prompt "${prompt_name}")
+  prompt="${prompt//\{\{REPORT_FILE\}\}/${report_file}}"
+  prompt="${prompt//\{\{TODAY\}\}/${today}}"
+
+  local allowed_tools
+  if [[ "${opt_fix}" == true ]]; then
+    allowed_tools="Edit,Write,Read,Glob,Grep"
+  else
+    allowed_tools="Read,Glob,Grep,Write"
+  fi
+
+  if ! docker_claude "${prompt}" "${allowed_tools}"; then
+    warn "Claude Code lint failed."
+    exit 1
+  fi
+
+  info "Lint report saved to ${report_file}"
+
+  # Git commit if --fix was used and changes were made (host)
+  if [[ "${opt_fix}" == true ]]; then
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      if ! git diff --quiet wiki/ 2>/dev/null; then
+        info "Committing auto-fix changes..."
+        git_commit_and_push "lint: auto-fix — ${today}" wiki/ "${report_file}"
+      fi
+    fi
+  fi
+
+  info "Lint complete."
 }
 
 cmd_search() {
   if has_help_flag "$@"; then help_search; return 0; fi
   require_docker
   require_data_repo
-  compose_run kb kamosu-search "$@"
+  compose_run kb python3 /opt/kamosu/tools/search-engine/searcher.py "$@"
 }
 
 cmd_shell() {
   if has_help_flag "$@"; then help_shell; return 0; fi
   require_docker
   require_data_repo
-  compose_run kb kamosu-shell "$@"
+  check_version_compat
+  compose_run kb claude "$@"
 }
 
 cmd_promote() {
   if has_help_flag "$@"; then help_promote; return 0; fi
-  require_docker
   require_data_repo
-  compose_run kb kamosu-promote "$@"
+
+  # Parse args
+  local opt_dry_run=false
+  local opt_list=false
+  local opt_files=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) opt_dry_run=true; shift ;;
+      --list)    opt_list=true; shift ;;
+      --file)    [[ $# -lt 2 ]] && die "--file requires a path argument."; opt_files+=("$2"); shift 2 ;;
+      -*)        die "Unknown option: $1" ;;
+      *)         opt_files+=("$1"); shift ;;
+    esac
+  done
+
+  [[ -d "wiki" ]] || die "wiki/ directory not found."
+
+  # --list mode (no Docker needed)
+  if [[ "${opt_list}" == true ]]; then
+    info "Unpromoted files in outputs/:"
+    list_unpromoted
+    return 0
+  fi
+
+  # Validate files
+  if [[ ${#opt_files[@]} -eq 0 ]]; then
+    die "No files specified. Provide file paths or use --list to see candidates."
+  fi
+  for file in "${opt_files[@]}"; do
+    [[ -f "${file}" ]] || die "File not found: ${file}"
+  done
+
+  local file_count=${#opt_files[@]}
+  local file_list
+  file_list=$(printf '%s\n' "${opt_files[@]}")
+
+  info "Promoting ${file_count} file(s):"
+  echo "${file_list}" | while IFS= read -r f; do
+    echo "  - ${f}"
+  done
+
+  require_docker
+  check_version_compat
+
+  # Read prompt and substitute placeholders
+  local prompt_name
+  if [[ "${opt_dry_run}" == true ]]; then
+    prompt_name="promote-dry-run.txt"
+  else
+    prompt_name="promote.txt"
+  fi
+  local prompt
+  prompt=$(read_prompt "${prompt_name}")
+  prompt="${prompt//\{\{FILE_LIST\}\}/${file_list}}"
+  prompt="${prompt//\{\{TODAY\}\}/$(date +%Y-%m-%d)}"
+
+  local allowed_tools
+  if [[ "${opt_dry_run}" == true ]]; then
+    allowed_tools="Read,Glob,Grep"
+  else
+    allowed_tools="Edit,Write,Read,Glob,Grep"
+  fi
+
+  if [[ "${opt_dry_run}" == true ]]; then
+    info "Dry run: showing integration plan..."
+    docker_claude "${prompt}" "${allowed_tools}"
+    info "Dry run complete. No changes were made."
+    return 0
+  fi
+
+  info "Invoking Claude Code for promotion..."
+  if ! docker_claude "${prompt}" "${allowed_tools}"; then
+    warn "Claude Code promotion failed."
+    exit 1
+  fi
+
+  # Record promoted files (host)
+  for file in "${opt_files[@]}"; do
+    record_promoted "${file}"
+  done
+  info "Recorded ${file_count} file(s) in ${HISTORY_FILE}."
+
+  # Git commit and push (host)
+  info "Committing changes..."
+  git_commit_and_push "promote: integrated ${file_count} file(s) into wiki
+
+Files promoted:
+${file_list}" wiki/ "${HISTORY_FILE}"
+
+  info "Promotion complete!"
 }
 
 cmd_migrate() {
   if has_help_flag "$@"; then help_migrate; return 0; fi
-  require_docker
   require_data_repo
-  compose_run kb kamosu-migrate "$@"
+
+  # Parse args
+  local opt_dry_run=false
+  local opt_force=false
+  local opt_target=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) opt_dry_run=true; shift ;;
+      --force)   opt_force=true; shift ;;
+      --to)      [[ $# -lt 2 ]] && die "--to requires a version argument"; opt_target="$2"; shift 2 ;;
+      *)         die "Unknown option: $1" ;;
+    esac
+  done
+
+  local current_version
+  current_version=$(cat .kb-toolkit-version | tr -d '[:space:]')
+
+  # Determine target version from image label
+  local target_version
+  if [[ -n "${opt_target}" ]]; then
+    target_version="${opt_target}"
+  else
+    require_docker
+    target_version="$(docker inspect --format '{{index .Config.Labels "kamosu.version"}}' "$(full_image)" 2>/dev/null || true)"
+    if [[ -z "$target_version" ]] || [[ "$target_version" == "<no value>" ]]; then
+      # Fallback: read VERSION file from image
+      target_version="$(docker run --rm --entrypoint cat "$(full_image)" /opt/kamosu/VERSION 2>/dev/null | tr -d '[:space:]')" || \
+        die "Cannot determine target version. Use --to <version>."
+    fi
+  fi
+
+  info "Current data version: ${current_version}"
+  info "Target version: ${target_version}"
+
+  if [[ "${current_version}" == "${target_version}" ]]; then
+    info "Already at version ${target_version}. No migration needed."
+    exit 0
+  fi
+
+  if version_gt "${current_version}" "${target_version}"; then
+    die "Data version (${current_version}) is newer than target (${target_version}). Run: kamosu update"
+  fi
+
+  # Git dirty check (host)
+  if [[ "${opt_force}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+      die "Working tree has uncommitted changes. Commit or stash first, or use --force."
+    fi
+  fi
+
+  # Find applicable migration scripts via Docker
+  require_docker
+  local scripts_raw
+  scripts_raw="$(docker run --rm --entrypoint bash "$(full_image)" -c 'ls /opt/kamosu/migrate/*.sh 2>/dev/null || true')"
+
+  local scripts=()
+  if [[ -n "$scripts_raw" ]]; then
+    while IFS= read -r script; do
+      [[ -z "$script" ]] && continue
+      local script_version
+      script_version=$(basename "${script}" .sh)
+      if version_gt "${script_version}" "${current_version}" && version_le "${script_version}" "${target_version}"; then
+        scripts+=("${script}")
+      fi
+    done <<< "$scripts_raw"
+  fi
+
+  if [[ ${#scripts[@]} -eq 0 ]]; then
+    info "No migration scripts to apply (${current_version} → ${target_version})."
+  else
+    info "Migrations to apply:"
+    for script in "${scripts[@]}"; do
+      info "  $(basename "${script}")"
+    done
+  fi
+
+  if [[ "${opt_dry_run}" == true ]]; then
+    info "(dry-run mode — no migrations executed)"
+    exit 0
+  fi
+
+  # Apply each migration in Docker
+  for script in "${scripts[@]}"; do
+    local script_name
+    script_name=$(basename "${script}")
+    info "Applying ${script_name}..."
+    compose_run kb bash "${script}"
+    info "  ${script_name} completed."
+  done
+
+  # Update version (host)
+  echo "${target_version}" > .kb-toolkit-version
+  info "Updated .kb-toolkit-version to ${target_version}."
+
+  # Git commit (host)
+  if [[ "${opt_force}" == false ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    info "Committing migration changes..."
+    git_commit_and_push "migrate: ${current_version} → ${target_version}" .kb-toolkit-version
+  else
+    if [[ "${opt_force}" == true ]]; then
+      info "Force mode: skipping git commit. Commit manually when ready."
+    fi
+  fi
+
+  info "Migration complete: ${current_version} → ${target_version}"
 }
 
 cmd_update() {
   if has_help_flag "$@"; then help_update; return 0; fi
   require_docker
-  if [[ -f .kb-toolkit-version ]]; then
-    local tag
-    tag="$(image_tag)"
-    echo "Pulling ${KAMOSU_IMAGE}:${tag} ..."
-    docker pull "${KAMOSU_IMAGE}:${tag}"
-  else
-    echo "Pulling ${KAMOSU_IMAGE}:latest ..."
-    docker pull "${KAMOSU_IMAGE}:latest"
-  fi
+  local tag
+  tag="$(image_tag)"
+  echo "Pulling ${KAMOSU_IMAGE}:${tag} ..."
+  docker pull "${KAMOSU_IMAGE}:${tag}"
 }
 
 cmd_version() {
@@ -340,7 +886,9 @@ See https://github.com/hayamiz/kamosu for full documentation.
 HELP
 }
 
-# --- Dispatcher ---
+# ===================================================================
+# DISPATCHER
+# ===================================================================
 
 if [[ $# -eq 0 ]]; then
   cmd_help

@@ -1,0 +1,19 @@
+Read /opt/kamosu/claude-base.md for the base protocol, then read CLAUDE.md for KB-specific instructions.
+
+Follow the Lint Protocol (Section 5 of claude-base.md) to perform all 5 checks:
+1. Orphaned articles detection (skip wiki/my-drafts/)
+2. Contradiction detection
+3. Source reference verification
+4. New connection suggestions
+5. Index consistency check
+
+Write the lint report to {{REPORT_FILE}} using the report format specified in the protocol.
+
+After generating the report, auto-fix the following if found:
+- Index inconsistencies (_master_index.md article counts, missing category entries)
+- Missing backlinks in Related Articles sections
+- Stale entries in _cross_references.md for deleted articles
+Do NOT modify article content or delete any files.
+
+Append a lint entry to wiki/_log.md:
+## [{{TODAY}}] lint | fix

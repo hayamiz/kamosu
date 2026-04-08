@@ -5,8 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 DOCKER_IMAGE="kamosu:latest"
 
-echo "  [1/4] Required commands in PATH..."
-for cmd in kamosu-init kamosu-compile kamosu-shell git jq python3 node claude; do
+echo "  [1/5] Required commands in PATH..."
+for cmd in kamosu-init git jq python3 node claude; do
     ASSERTIONS=$((ASSERTIONS + 1))
     if docker run --rm "${DOCKER_IMAGE}" which "${cmd}" > /dev/null 2>&1; then
         :
@@ -16,8 +16,8 @@ for cmd in kamosu-init kamosu-compile kamosu-shell git jq python3 node claude; d
     fi
 done
 
-echo "  [2/4] Script permissions..."
-for script in kamosu-init kamosu-compile kamosu-shell entrypoint.sh; do
+echo "  [2/5] Script permissions..."
+for script in kamosu-init entrypoint.sh; do
     ASSERTIONS=$((ASSERTIONS + 1))
     if docker run --rm "${DOCKER_IMAGE}" test -x "/opt/kamosu/scripts/${script}"; then
         :
@@ -27,7 +27,7 @@ for script in kamosu-init kamosu-compile kamosu-shell entrypoint.sh; do
     fi
 done
 
-echo "  [3/4] File placement..."
+echo "  [3/5] File placement..."
 for path in /opt/kamosu/claude-base.md /opt/kamosu/templates/kb-claude.md.tmpl /opt/kamosu/templates/docker-compose.yml.tmpl /opt/kamosu/templates/.env.example /opt/kamosu/VERSION; do
     ASSERTIONS=$((ASSERTIONS + 1))
     if docker run --rm "${DOCKER_IMAGE}" test -f "${path}"; then
@@ -38,7 +38,18 @@ for path in /opt/kamosu/claude-base.md /opt/kamosu/templates/kb-claude.md.tmpl /
     fi
 done
 
-echo "  [4/4] KB_TOOLKIT_VERSION environment variable..."
+echo "  [4/5] Prompt templates..."
+for prompt in compile.txt lint.txt lint-fix.txt promote.txt promote-dry-run.txt; do
+    ASSERTIONS=$((ASSERTIONS + 1))
+    if docker run --rm "${DOCKER_IMAGE}" test -f "/opt/kamosu/prompts/${prompt}"; then
+        :
+    else
+        FAILURES=$((FAILURES + 1))
+        echo "  ASSERT FAIL: /opt/kamosu/prompts/${prompt} not found"
+    fi
+done
+
+echo "  [5/5] KB_TOOLKIT_VERSION environment variable..."
 ASSERTIONS=$((ASSERTIONS + 1))
 VERSION=$(docker run --rm "${DOCKER_IMAGE}" bash -c 'echo $KB_TOOLKIT_VERSION')
 EXPECTED=$(cat VERSION | tr -d '[:space:]')

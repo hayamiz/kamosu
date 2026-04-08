@@ -1,0 +1,12 @@
+Read /opt/kamosu/claude-base.md for the base protocol.
+
+I want to promote the following Q&A output(s) into wiki articles:
+{{FILE_LIST}}
+
+Read each file, then read _master_index.md and relevant category indexes.
+Analyze the content and produce an integration plan:
+- For each file, state whether it should become a new article or be merged into an existing one
+- If merging, name the target article(s)
+- List which indexes would be updated
+
+DO NOT make any changes. Only output the plan.

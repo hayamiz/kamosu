@@ -24,7 +24,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code
 
 # Create kamosu directories
-RUN mkdir -p /opt/kamosu/scripts /opt/kamosu/templates /opt/kamosu/tools
+RUN mkdir -p /opt/kamosu/scripts /opt/kamosu/templates /opt/kamosu/tools /opt/kamosu/prompts
 
 # Copy VERSION
 COPY VERSION /opt/kamosu/VERSION
@@ -38,15 +38,23 @@ ENV KB_TOOLKIT_VERSION=${KB_TOOLKIT_VERSION:-0.1.0}
 # Copy claude-base.md
 COPY claude-base.md /opt/kamosu/claude-base.md
 
+# Copy prompts
+COPY prompts/ /opt/kamosu/prompts/
+
 # Copy templates
 COPY templates/ /opt/kamosu/templates/
 
-# Copy scripts and make executable
-COPY scripts/ /opt/kamosu/scripts/
+# Copy scripts (only kamosu-init and entrypoint.sh are used in-container)
+COPY scripts/kamosu-init /opt/kamosu/scripts/kamosu-init
+COPY scripts/entrypoint.sh /opt/kamosu/scripts/entrypoint.sh
 RUN chmod +x /opt/kamosu/scripts/*
 
 # Add scripts to PATH
 ENV PATH="/opt/kamosu/scripts:${PATH}"
+
+# Image labels for version compatibility (read by host CLI via docker inspect)
+LABEL kamosu.version="${KB_TOOLKIT_VERSION:-0.1.0}"
+LABEL kamosu.min_cli_version="0.2.0"
 
 # Working directory for data repositories
 WORKDIR /workspace
